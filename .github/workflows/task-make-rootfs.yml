@@ -26,6 +26,9 @@ jobs:
       success: ${{ steps.build.outputs.success }}
     
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+      
       - name: Checkout buildpacks-ci
         uses: actions/checkout@v4
         with:
