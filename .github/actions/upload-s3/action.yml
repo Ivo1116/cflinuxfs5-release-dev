@@ -1,0 +1,91 @@
+name: 'Upload to S3'
+description: 'Upload artifacts to S3 - equivalent to Concourse upload-s3 task'
+
+inputs:
+  upload-type:
+    description: 'Type of upload (stack-s3 or receipt-s3)'
+    required: true
+  version:
+    description: 'Version number'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          
+    - name: Upload to S3
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        VERSION="${{ inputs.version }}"
+        UPLOAD_TYPE="${{ inputs.upload-type }}"
+        
+        case "$UPLOAD_TYPE" in
+          "stack-s3")
+            STACK_FILE="rootfs-artifacts/cflinuxfs5-${VERSION}.tar.gz"
+            if [ ! -f "$STACK_FILE" ]; then
+              echo "ERROR: Stack file not found: $STACK_FILE"
+              exit 1
+            fi
+            
+            echo "Uploading stack tarball to S3..."
+            aws s3 cp "$STACK_FILE" \
+              "s3://buildpacks.cloudfoundry.org/rootfs/" \
+              --content-type application/gzip \
+              --metadata version="${VERSION}"
+            
+            echo "Stack uploaded successfully"
+            ;;
+            
+          "receipt-s3")
+            RECEIPT_FILE="receipt-artifacts/receipt.cflinuxfs5.x86_64-${VERSION}"
+            if [ ! -f "$RECEIPT_FILE" ]; then
+              echo "ERROR: Receipt file not found: $RECEIPT_FILE"
+              exit 1
+            fi
+            
+            echo "Uploading receipt to S3..."
+            aws s3 cp "$RECEIPT_FILE" \
+              "s3://buildpacks.cloudfoundry.org/rootfs/" \
+              --content-type text/plain \
+              --metadata version="${VERSION}"
+            
+            echo "Receipt uploaded successfully"
+            ;;
+            
+          *)
+            echo "ERROR: Unknown upload type: $UPLOAD_TYPE"
+            exit 1
+            ;;
+        esac
+        
+    - name: Verify upload
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        UPLOAD_TYPE="${{ inputs.upload-type }}"
+        
+        case "$UPLOAD_TYPE" in
+          "stack-s3")
+            echo "Verifying stack upload..."
+            aws s3 ls "s3://buildpacks.cloudfoundry.org/rootfs/cflinuxfs5-${VERSION}.tar.gz" || \
+              (echo "ERROR: Stack file not found in S3" && exit 1)
+            ;;
+          "receipt-s3")
+            echo "Verifying receipt upload..."
+            aws s3 ls "s3://buildpacks.cloudfoundry.org/rootfs/receipt.cflinuxfs5.x86_64-${VERSION}" || \
+              (echo "ERROR: Receipt file not found in S3" && exit 1)
+            ;;
+        esac
+        
+        echo "Upload verified successfully"

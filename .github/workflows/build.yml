@@ -22,7 +22,7 @@ on:
     types: [golang-update]
 
 jobs:
-  # Resource gathering (parallel - like Concourse in_parallel)
+  # Resource gathering
   gather-resources:
     name: Gather Resources
     runs-on: ubuntu-latest
@@ -66,48 +66,72 @@ jobs:
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-  # Main build task (like Concourse task)
-  make-rootfs:
-    name: Make Rootfs
+  # Main build and process job - now using actions directly
+  build-and-process:
+    name: Build and Process Rootfs
     needs: gather-resources
-    uses: ./.github/workflows/task-make-rootfs.yml
-    with:
-      stack: cflinuxfs5
-      version: ${{ needs.gather-resources.outputs.version }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+      
+      - name: Checkout buildpacks-ci
+        uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/buildpacks-ci
+          ref: master
+          path: buildpacks-ci
+          
+      - name: Checkout cflinuxfs5
+        uses: actions/checkout@v4
+        with:
+          repository: plamen-bardarov/cflinuxfs5
+          ref: main
+          path: cflinuxfs5
+          token: ${{ secrets.CFLINUXFS5_TOKEN }}
 
-  # Upload tasks (parallel - like Concourse puts)
-  upload-artifacts:
-    name: Upload Artifacts
-    needs: [gather-resources, make-rootfs]
-    strategy:
-      matrix:
-        upload-type: [stack-s3, receipt-s3]
-    uses: ./.github/workflows/task-upload-s3.yml
-    with:
-      upload-type: ${{ matrix.upload-type }}
-      version: ${{ needs.gather-resources.outputs.version }}
-      artifacts-path: ${{ needs.make-rootfs.outputs.artifacts-path }}
-    secrets: inherit
+      # Build rootfs
+      - name: Make rootfs
+        uses: ./.github/actions/make-rootfs
+        with:
+          stack: cflinuxfs5
+          version: ${{ needs.gather-resources.outputs.version }}
+          privileged: true
 
-  # Receipt diff task
-  generate-receipt-diff:
-    name: Generate Receipt Diff
-    needs: [gather-resources, make-rootfs]
-    uses: ./.github/workflows/task-generate-receipt-diff.yml
-    with:
-      stack: cflinuxfs5
-      version: ${{ needs.gather-resources.outputs.version }}
-      previous-version: ${{ needs.gather-resources.outputs.previous-version }}
-      artifacts-path: ${{ needs.make-rootfs.outputs.artifacts-path }}
-    secrets: inherit
+      # Generate receipt diff
+      - name: Generate receipt diff
+        uses: ./.github/actions/generate-receipt-diff
+        with:
+          stack: cflinuxfs5
+          version: ${{ needs.gather-resources.outputs.version }}
+          previous-version: ${{ needs.gather-resources.outputs.previous-version }}
 
-  # Update repositories task
-  update-repositories:
-    name: Update Repositories
-    needs: [gather-resources, make-rootfs, generate-receipt-diff]
-    uses: ./.github/workflows/task-update-repos.yml
-    with:
-      version: ${{ needs.gather-resources.outputs.version }}
-      receipt-diff-path: ${{ needs.generate-receipt-diff.outputs.diff-path }}
-    secrets: inherit
+      # Upload to S3 (both stack and receipt)
+      - name: Upload stack to S3
+        uses: ./.github/actions/upload-s3
+        with:
+          upload-type: stack-s3
+          version: ${{ needs.gather-resources.outputs.version }}
+
+      - name: Upload receipt to S3
+        uses: ./.github/actions/upload-s3
+        with:
+          upload-type: receipt-s3
+          version: ${{ needs.gather-resources.outputs.version }}
+
+      # Update repositories
+     # - name: Update repositories
+     #   uses: ./.github/actions/update-repos
+     #   with:
+     #     version: ${{ needs.gather-resources.outputs.version }}
+
+      # Upload build artifacts to GitHub
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-build-${{ needs.gather-resources.outputs.version }}
+          path: |
+            rootfs-artifacts/
+            receipt-artifacts/
+            public-robots-artifacts/
+          retention-days: 30

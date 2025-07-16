@@ -12,28 +12,106 @@ inputs:
     description: 'Previous version'
     required: true
 
+outputs:
+  diff-path:
+    description: 'Path to generated diff'
+    value: ${{ steps.diff.outputs.diff-path }}
+
 runs:
   using: 'composite'
   steps:
-    - name: Setup Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.2'
-        bundler-cache: true
-        working-directory: buildpacks-ci
+    - name: Create output directory
+      shell: bash
+      run: |
+        mkdir -p public-robots-artifacts
         
-    - name: Generate diff
+    - name: Download previous receipt
       shell: bash
       run: |
         set -euo pipefail
         
-        # Create output directory
-        mkdir -p public-robots-artifacts
+        STACK="${{ inputs.stack }}"
+        PREV_VERSION="${{ inputs.previous-version }}"
         
-        # Execute diff generation (equivalent to Concourse task)
-        cd buildpacks-ci
-        bundle exec ruby tasks/generate-rootfs-receipt-diff.rb \
-          --stack=${{ inputs.stack }} \
-          --version=${{ inputs.version }} \
-          --previous-version=${{ inputs.previous-version }} \
-          --output-dir=../public-robots-artifacts
+        if [ -n "$PREV_VERSION" ]; then
+          # Try to download previous receipt from S3 or GitHub releases
+          echo "Attempting to download previous receipt for version: $PREV_VERSION"
+          
+          # First try S3
+          if aws s3 cp "s3://buildpacks.cloudfoundry.org/rootfs/receipt.${STACK}.x86_64-${PREV_VERSION}" \
+             "receipt.${STACK}.x86_64.previous" 2>/dev/null; then
+            echo "Downloaded previous receipt from S3"
+          else
+            # Try GitHub releases as fallback
+            echo "S3 download failed, trying GitHub releases..."
+            curl -L -o "receipt.${STACK}.x86_64.previous" \
+              "https://github.com/cloudfoundry/cflinuxfs5/releases/download/${PREV_VERSION}/receipt.${STACK}.x86_64" || \
+              echo "Could not download previous receipt, will create empty file"
+            
+            # Create empty previous receipt if download fails
+            if [ ! -f "receipt.${STACK}.x86_64.previous" ]; then
+              touch "receipt.${STACK}.x86_64.previous"
+            fi
+          fi
+        else
+          echo "No previous version specified, creating empty previous receipt"
+          touch "receipt.${STACK}.x86_64.previous"
+        fi
+        
+    - name: Generate diff
+      id: diff
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        STACK="${{ inputs.stack }}"
+        VERSION="${{ inputs.version }}"
+        
+        # Find current receipt
+        CURRENT_RECEIPT="receipt-artifacts/receipt.${STACK}.x86_64-${VERSION}"
+        PREVIOUS_RECEIPT="receipt.${STACK}.x86_64.previous"
+        
+        if [ ! -f "$CURRENT_RECEIPT" ]; then
+          echo "ERROR: Current receipt not found: $CURRENT_RECEIPT"
+          exit 1
+        fi
+        
+        echo "=== Generating Receipt Diff ==="
+        echo "Previous: $PREVIOUS_RECEIPT"
+        echo "Current: $CURRENT_RECEIPT"
+        
+        # Generate diff
+        DIFF_FILE="public-robots-artifacts/receipt-diff-${VERSION}.txt"
+        
+        if command -v git >/dev/null 2>&1; then
+          git --no-pager diff --no-index "$PREVIOUS_RECEIPT" "$CURRENT_RECEIPT" > "$DIFF_FILE" || true
+        else
+          diff -u "$PREVIOUS_RECEIPT" "$CURRENT_RECEIPT" > "$DIFF_FILE" || true
+        fi
+        
+        # Also create a summary
+        SUMMARY_FILE="public-robots-artifacts/receipt-summary-${VERSION}.txt"
+        {
+          echo "Receipt Diff Summary"
+          echo "==================="
+          echo "Previous Version: ${{ inputs.previous-version }}"
+          echo "Current Version: $VERSION"
+          echo "Generated: $(date -u)"
+          echo ""
+          echo "Diff:"
+          cat "$DIFF_FILE"
+        } > "$SUMMARY_FILE"
+        
+        echo "Diff generated successfully"
+        echo "diff-path=public-robots-artifacts" >> $GITHUB_OUTPUT
+        
+    - name: Configure AWS credentials (for S3 download)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+      continue-on-error: true

@@ -24,83 +24,96 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Install system dependencies for nokogiri and Ruby native extensions
-      shell: bash
-      run: |
-        set -e
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          gcc \
-          make \
-          patch \
-          ruby-dev \
-          zlib1g-dev \
-          liblzma-dev \
-          libxml2-dev \
-          libxslt1-dev \
-          libgmp-dev \
-          libffi-dev \
-          netbase \
-          wget \
-          curl \
-          pkg-config \
-          libxml2 \
-          libxslt1.1
-
-    - name: Setup Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.2.8'
-        bundler-cache: false  # Disable cache since we're modifying Gemfile
-        working-directory: buildpacks-ci
-
-    - name: Patch Gemfile for Ruby 3.2 compatibility
-      shell: bash
-      run: |
-        cd buildpacks-ci
-        
-        # Remove ruby version constraint
-        sed -i.bak '/^ruby/d' Gemfile
-        
-        # Add missing Ruby 3.2 dependencies
-        echo "gem 'net-ftp'" >> Gemfile
-        echo "gem 'net-smtp'" >> Gemfile
-        
-        # Update nokogiri to compatible version
-        sed -i 's/gem.*nokogiri.*/gem "nokogiri", "~> 1.15.0"/' Gemfile || echo 'gem "nokogiri", "~> 1.15.0"' >> Gemfile
-        
-        # Remove Gemfile.lock to force regeneration
-        rm -f Gemfile.lock
-        
-        # Disable deployment mode for this build
-        bundle config unset deployment
-        
-        # Install gems (this will create new Gemfile.lock)
-        bundle install
-        
     - name: Setup Docker Buildx
-      if: inputs.privileged == 'true'
       uses: docker/setup-buildx-action@v3
       
+    - name: Start Docker daemon
+      shell: bash
+      run: |
+        # Ensure Docker daemon is running
+        sudo systemctl start docker
+        sudo usermod -aG docker $USER
+        
+    - name: Create version file
+      shell: bash
+      run: |
+        mkdir -p version
+        echo "${{ inputs.version }}" > version/number
+        
+    - name: Create output directories
+      shell: bash
+      run: |
+        mkdir -p rootfs-artifacts
+        mkdir -p receipt-artifacts
+        
     - name: Build rootfs
       id: build
       shell: bash
       run: |
         set -euo pipefail
+        set -x
         
-        # Create output directories
-        mkdir -p rootfs-artifacts
-        mkdir -p receipt-artifacts
+        # Navigate to rootfs directory (equivalent to pushd rootfs)
+        cd ${{ inputs.stack }}
         
-        # Execute build (equivalent to Concourse task)
-        cd buildpacks-ci
-        bundle exec ruby tasks/make-rootfs.rb \
-          --stack=${{ inputs.stack }} \
-          --version=${{ inputs.version }} \
-          --privileged=${{ inputs.privileged }} \
-          --output-dir=../rootfs-artifacts \
-          --receipt-dir=../receipt-artifacts
+        # Backup old receipt if it exists
+        STACK="${{ inputs.stack }}"
+        old_receipt_copy="receipt.${STACK}.x86_64.copy"
         
+        if [ -f "receipt.${STACK}.x86_64" ]; then
+          mv "receipt.${STACK}.x86_64" "$old_receipt_copy"
+        else
+          # Create empty backup file for diff comparison
+          touch "$old_receipt_copy"
+        fi
+        
+        # Build the rootfs using make (this is the key step from original)
+        make --always-make NAME="$STACK"
+        
+        # Move versioned stack tarball to output directory
+        VERSION="${{ inputs.version }}"
+        versioned_stack_filename="../rootfs-artifacts/${STACK}-${VERSION}.tar.gz"
+        mv "${STACK}.x86_64.tar.gz" "$versioned_stack_filename"
+        
+        # Move versioned receipt to output directory
+        versioned_receipt_filename="../receipt-artifacts/receipt.${STACK}.x86_64-${VERSION}"
+        mv "receipt.${STACK}.x86_64" "$versioned_receipt_filename"
+        
+        # Show what changed in the receipt (equivalent to git diff in original)
+        if command -v git >/dev/null 2>&1; then
+          echo "=== Receipt Changes ==="
+          TERM=xterm-color git --no-pager diff --no-index "$old_receipt_copy" "$versioned_receipt_filename" || true
+        else
+          echo "=== Receipt Changes (using diff) ==="
+          diff "$old_receipt_copy" "$versioned_receipt_filename" || true
+        fi
+        
+        # Clean up
+        rm -f "$old_receipt_copy"
+        
+        # Set outputs
         echo "artifacts-path=." >> $GITHUB_OUTPUT
         echo "success=true" >> $GITHUB_OUTPUT
+        
+    - name: Verify artifacts were created
+      shell: bash
+      run: |
+        echo "=== Checking created artifacts ==="
+        ls -la rootfs-artifacts/
+        ls -la receipt-artifacts/
+        
+        # Verify the main artifacts exist
+        STACK="${{ inputs.stack }}"
+        VERSION="${{ inputs.version }}"
+        
+        if [ ! -f "rootfs-artifacts/${STACK}-${VERSION}.tar.gz" ]; then
+          echo "ERROR: Stack tarball not found!"
+          exit 1
+        fi
+        
+        if [ ! -f "receipt-artifacts/receipt.${STACK}.x86_64-${VERSION}" ]; then
+          echo "ERROR: Receipt file not found!"
+          exit 1
+        fi
+        
+        echo "All artifacts created successfully"
