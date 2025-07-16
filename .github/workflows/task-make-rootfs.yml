@@ -44,6 +44,10 @@ jobs:
           path: cflinuxfs5
           token: ${{ secrets.CFLINUXFS5_TOKEN }}
 
+      - name: Patch Gemfile for modern Ruby
+        run: |
+          sed -i.bak '/^ruby/d' buildpacks-ci/Gemfile
+
       - name: Make rootfs
         id: build
         uses: ./.github/actions/make-rootfs
