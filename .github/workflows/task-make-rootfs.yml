@@ -1,0 +1,59 @@
+name: Task - Make Rootfs
+
+on:
+  workflow_call:
+    inputs:
+      stack:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    outputs:
+      artifacts-path:
+        description: "Path to build artifacts"
+        value: ${{ jobs.build.outputs.artifacts-path }}
+      success:
+        description: "Build success status"
+        value: ${{ jobs.build.outputs.success }}
+
+jobs:
+  build:
+    name: Build ${{ inputs.stack }}
+    runs-on: ubuntu-latest
+    outputs:
+      artifacts-path: ${{ steps.build.outputs.artifacts-path }}
+      success: ${{ steps.build.outputs.success }}
+    
+    steps:
+      - name: Checkout buildpacks-ci
+        uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/buildpacks-ci
+          ref: master
+          path: buildpacks-ci
+          
+      - name: Checkout cflinuxfs4
+        uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/cflinuxfs4
+          ref: main
+          path: cflinuxfs4
+          token: ${{ secrets.CFLINUXFS4_TOKEN }}
+
+      - name: Make rootfs
+        id: build
+        uses: ./buildpacks-ci/.github/actions/make-rootfs
+        with:
+          stack: ${{ inputs.stack }}
+          version: ${{ inputs.version }}
+          privileged: true
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-build-${{ inputs.version }}
+          path: |
+            rootfs-artifacts/
+            receipt-artifacts/
+          retention-days: 30

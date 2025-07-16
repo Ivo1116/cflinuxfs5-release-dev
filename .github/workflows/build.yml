@@ -1,0 +1,113 @@
+name: Build Rootfs
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_reason:
+        description: 'Reason for triggering build'
+        required: false
+        default: 'Manual trigger'
+  workflow_run:
+    workflows: ["CVE Monitoring"]
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'cflinuxfs4/**'
+      - '!cflinuxfs4/receipt.cflinuxfs4.x86_64'
+      - '!cflinuxfs4/README.md'
+      - '!cflinuxfs4/.gitignore'
+  repository_dispatch:
+    types: [golang-update]
+
+jobs:
+  # Resource gathering (parallel - like Concourse in_parallel)
+  gather-resources:
+    name: Gather Resources
+    runs-on: ubuntu-latest
+    outputs:
+      previous-version: ${{ steps.previous-release.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Get previous rootfs release
+        id: previous-release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CFLINUXFS4_TOKEN }}
+          script: |
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: 'cloudfoundry',
+              repo: 'cflinuxfs4',
+              per_page: 1
+            });
+            const previousTag = releases.length > 0 ? releases[0].tag_name : '';
+            core.setOutput('tag', previousTag);
+
+      - name: Generate version
+        id: version
+        run: |
+          # Version generation logic (bump to RC)
+          PREVIOUS="${{ steps.previous-release.outputs.tag }}"
+          PREVIOUS=${PREVIOUS#v}
+          
+          if [[ -z "$PREVIOUS" ]]; then
+            VERSION="1.0.0-rc.1"
+          elif [[ "$PREVIOUS" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.([0-9]+)$ ]]; then
+            BASE_VERSION="${BASH_REMATCH[1]}"
+            RC_NUMBER="${BASH_REMATCH[2]}"
+            NEW_RC_NUMBER=$((RC_NUMBER + 1))
+            VERSION="${BASE_VERSION}-rc.${NEW_RC_NUMBER}"
+          elif [[ "$PREVIOUS" =~ ^([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            IFS='.' read -r major minor patch <<< "$PREVIOUS"
+            new_patch=$((patch + 1))
+            VERSION="${major}.${minor}.${new_patch}-rc.1"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  # Main build task (like Concourse task)
+  make-rootfs:
+    name: Make Rootfs
+    needs: gather-resources
+    uses: ./.github/workflows/task-make-rootfs.yml
+    with:
+      stack: cflinuxfs4
+      version: ${{ needs.gather-resources.outputs.version }}
+    secrets: inherit
+
+  # Upload tasks (parallel - like Concourse puts)
+  upload-artifacts:
+    name: Upload Artifacts
+    needs: [gather-resources, make-rootfs]
+    strategy:
+      matrix:
+        upload-type: [stack-s3, receipt-s3]
+    uses: ./.github/workflows/task-upload-s3.yml
+    with:
+      upload-type: ${{ matrix.upload-type }}
+      version: ${{ needs.gather-resources.outputs.version }}
+      artifacts-path: ${{ needs.make-rootfs.outputs.artifacts-path }}
+    secrets: inherit
+
+  # Receipt diff task
+  generate-receipt-diff:
+    name: Generate Receipt Diff
+    needs: [gather-resources, make-rootfs]
+    uses: ./.github/workflows/task-generate-receipt-diff.yml
+    with:
+      stack: cflinuxfs4
+      version: ${{ needs.gather-resources.outputs.version }}
+      previous-version: ${{ needs.gather-resources.outputs.previous-version }}
+      artifacts-path: ${{ needs.make-rootfs.outputs.artifacts-path }}
+    secrets: inherit
+
+  # Update repositories task
+  update-repositories:
+    name: Update Repositories
+    needs: [gather-resources, make-rootfs, generate-receipt-diff]
+    uses: ./.github/workflows/task-update-repos.yml
+    with:
+      version: ${{ needs.gather-resources.outputs.version }}
+      receipt-diff-path: ${{ needs.generate-receipt-diff.outputs.diff-path }}
+    secrets: inherit
