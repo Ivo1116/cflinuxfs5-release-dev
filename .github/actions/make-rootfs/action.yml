@@ -54,6 +54,30 @@ runs:
         ruby-version: '3.2.8'
         bundler-cache: false  # Disable cache since we're modifying Gemfile
         working-directory: buildpacks-ci
+
+    - name: Patch Gemfile for Ruby 3.2 compatibility
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        # Remove ruby version constraint
+        sed -i.bak '/^ruby/d' Gemfile
+        
+        # Add missing Ruby 3.2 dependencies
+        echo "gem 'net-ftp'" >> Gemfile
+        echo "gem 'net-smtp'" >> Gemfile
+        
+        # Update nokogiri to compatible version
+        sed -i 's/gem.*nokogiri.*/gem "nokogiri", "~> 1.15.0"/' Gemfile || echo 'gem "nokogiri", "~> 1.15.0"' >> Gemfile
+        
+        # Remove Gemfile.lock to force regeneration
+        rm -f Gemfile.lock
+        
+        # Disable deployment mode for this build
+        bundle config unset deployment
+        
+        # Install gems (this will create new Gemfile.lock)
+        bundle install
         
     - name: Setup Docker Buildx
       if: inputs.privileged == 'true'
