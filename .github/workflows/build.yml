@@ -70,7 +70,7 @@ jobs:
   make-rootfs:
     name: Make Rootfs
     needs: gather-resources
-    uses: ivo9999/cflinuxfs5-release/.github/workflows/task-make-rootfs.yml
+    uses: ivo9999/cflinuxfs5-release/.github/workflows/task-make-rootfs.yml@main
     with:
       stack: cflinuxfs5
       version: ${{ needs.gather-resources.outputs.version }}
