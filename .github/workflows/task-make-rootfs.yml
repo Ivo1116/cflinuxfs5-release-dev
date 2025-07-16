@@ -36,7 +36,7 @@ jobs:
       - name: Checkout cflinuxfs5
         uses: actions/checkout@v4
         with:
-          repository: cloudfoundry/cflinuxfs5
+          repository: plamen-bardarov/cflinuxfs5
           ref: main
           path: cflinuxfs5
           token: ${{ secrets.CFLINUXFS5_TOKEN }}
