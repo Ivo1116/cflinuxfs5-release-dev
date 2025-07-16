@@ -44,9 +44,16 @@ jobs:
           path: cflinuxfs5
           token: ${{ secrets.CFLINUXFS5_TOKEN }}
 
-      - name: Patch Gemfile for modern Ruby
+      - name: Patch Gemfile for Ruby 3.2 compatibility
+        shell: bash
         run: |
-          sed -i.bak '/^ruby/d' buildpacks-ci/Gemfile
+          cd buildpacks-ci
+          sed -i.bak '/^ruby/d' Gemfile
+          # Add missing Ruby 3.2 dependencies
+          echo "gem 'net-ftp'" >> Gemfile
+          echo "gem 'net-smtp'" >> Gemfile
+          # Update nokogiri to compatible version
+          sed -i 's/gem.*nokogiri.*/gem "nokogiri", "~> 1.15.0"/' Gemfile || echo 'gem "nokogiri", "~> 1.15.0"' >> Gemfile
 
       - name: Make rootfs
         id: build
