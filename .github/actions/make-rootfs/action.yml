@@ -43,13 +43,16 @@ runs:
           libffi-dev \
           netbase \
           wget \
-          curl
+          curl \
+          pkg-config \
+          libxml2 \
+          libxslt1.1
 
     - name: Setup Ruby
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: '3.2.8'
-        bundler-cache: true
+        bundler-cache: false  # Disable cache since we're modifying Gemfile
         working-directory: buildpacks-ci
         
     - name: Setup Docker Buildx
