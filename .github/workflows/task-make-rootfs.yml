@@ -43,7 +43,7 @@ jobs:
 
       - name: Make rootfs
         id: build
-        uses: .github/actions/make-rootfs
+        uses: ./.github/actions/make-rootfs
         with:
           stack: ${{ inputs.stack }}
           version: ${{ inputs.version }}
