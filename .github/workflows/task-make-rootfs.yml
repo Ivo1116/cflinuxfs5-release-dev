@@ -33,13 +33,13 @@ jobs:
           ref: master
           path: buildpacks-ci
           
-      - name: Checkout cflinuxfs4
+      - name: Checkout cflinuxfs5
         uses: actions/checkout@v4
         with:
-          repository: cloudfoundry/cflinuxfs4
+          repository: cloudfoundry/cflinuxfs5
           ref: main
-          path: cflinuxfs4
-          token: ${{ secrets.CFLINUXFS4_TOKEN }}
+          path: cflinuxfs5
+          token: ${{ secrets.CFLINUXFS5_TOKEN }}
 
       - name: Make rootfs
         id: build

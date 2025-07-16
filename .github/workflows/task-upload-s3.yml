@@ -36,12 +36,12 @@ jobs:
         run: |
           case "${{ inputs.upload-type }}" in
             "stack-s3")
-              aws s3 cp rootfs-artifacts/cflinuxfs4-*.tar.gz \
+              aws s3 cp rootfs-artifacts/cflinuxfs5-*.tar.gz \
                 s3://buildpacks.cloudfoundry.org/rootfs/ \
                 --content-type application/gzip
               ;;
             "receipt-s3")
-              aws s3 cp receipt-artifacts/receipt.cflinuxfs4.x86_64-* \
+              aws s3 cp receipt-artifacts/receipt.cflinuxfs5.x86_64-* \
                 s3://buildpacks.cloudfoundry.org/rootfs/ \
                 --content-type text/plain
               ;;
