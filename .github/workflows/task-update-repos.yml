@@ -1,0 +1,47 @@
+name: Task - Update Repositories
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      receipt-diff-path:
+        required: true
+        type: string
+
+jobs:
+  update-repos:
+    name: Update Repositories
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout public-robots
+        uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/public-buildpacks-ci-robots
+          ref: main
+          path: public-robots
+          token: ${{ secrets.PUBLIC_ROBOTS_TOKEN }}
+          
+      - name: Download diff artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: receipt-diff-${{ inputs.version }}
+          path: public-robots-artifacts/
+          
+      - name: Update repositories
+        uses: ./public-robots/.github/actions/update-with-diff
+        with:
+          version: ${{ inputs.version }}
+          diff-path: ${{ inputs.receipt-diff-path }}
+          
+      - name: Create version file
+        run: |
+          echo "${{ inputs.version }}" > version/number
+          
+      - name: Upload version
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-${{ inputs.version }}
+          path: version/

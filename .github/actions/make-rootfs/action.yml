@@ -1,0 +1,58 @@
+name: 'Make Rootfs'
+description: 'Build rootfs tarball - equivalent to Concourse make-rootfs task'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  version:
+    description: 'Version number'
+    required: true
+  privileged:
+    description: 'Run with privileged access'
+    required: false
+    default: 'false'
+
+outputs:
+  artifacts-path:
+    description: 'Path to generated artifacts'
+    value: ${{ steps.build.outputs.artifacts-path }}
+  success:
+    description: 'Build success status'
+    value: ${{ steps.build.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+        bundler-cache: true
+        working-directory: buildpacks-ci
+        
+    - name: Setup Docker Buildx
+      if: inputs.privileged == 'true'
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build rootfs
+      id: build
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Create output directories
+        mkdir -p rootfs-artifacts
+        mkdir -p receipt-artifacts
+        
+        # Execute build (equivalent to Concourse task)
+        cd buildpacks-ci
+        bundle exec ruby tasks/make-rootfs.rb \
+          --stack=${{ inputs.stack }} \
+          --version=${{ inputs.version }} \
+          --privileged=${{ inputs.privileged }} \
+          --output-dir=../rootfs-artifacts \
+          --receipt-dir=../receipt-artifacts
+        
+        echo "artifacts-path=." >> $GITHUB_OUTPUT
+        echo "success=true" >> $GITHUB_OUTPUT

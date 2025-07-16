@@ -1,0 +1,39 @@
+name: 'Generate Receipt Diff'
+description: 'Generate receipt diff - equivalent to Concourse generate-receipt-diff task'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  version:
+    description: 'Version number'
+    required: true
+  previous-version:
+    description: 'Previous version'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+        bundler-cache: true
+        working-directory: buildpacks-ci
+        
+    - name: Generate diff
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Create output directory
+        mkdir -p public-robots-artifacts
+        
+        # Execute diff generation (equivalent to Concourse task)
+        cd buildpacks-ci
+        bundle exec ruby tasks/generate-rootfs-receipt-diff.rb \
+          --stack=${{ inputs.stack }} \
+          --version=${{ inputs.version }} \
+          --previous-version=${{ inputs.previous-version }} \
+          --output-dir=../public-robots-artifacts
