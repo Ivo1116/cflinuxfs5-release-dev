@@ -18,9 +18,6 @@ runs:
         aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
-      env:
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
           
     - name: Upload to S3
       shell: bash
@@ -35,6 +32,8 @@ runs:
             STACK_FILE="rootfs-artifacts/cflinuxfs5-${VERSION}.tar.gz"
             if [ ! -f "$STACK_FILE" ]; then
               echo "ERROR: Stack file not found: $STACK_FILE"
+              echo "Available files:"
+              ls -la rootfs-artifacts/ || echo "No rootfs-artifacts directory"
               exit 1
             fi
             
@@ -51,6 +50,8 @@ runs:
             RECEIPT_FILE="receipt-artifacts/receipt.cflinuxfs5.x86_64-${VERSION}"
             if [ ! -f "$RECEIPT_FILE" ]; then
               echo "ERROR: Receipt file not found: $RECEIPT_FILE"
+              echo "Available files:"
+              ls -la receipt-artifacts/ || echo "No receipt-artifacts directory"
               exit 1
             fi
             

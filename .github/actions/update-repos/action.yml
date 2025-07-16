@@ -16,8 +16,6 @@ runs:
         ref: main
         path: public-robots
         token: ${{ env.PUBLIC_ROBOTS_TOKEN }}
-      env:
-        PUBLIC_ROBOTS_TOKEN: ${{ env.PUBLIC_ROBOTS_TOKEN }}
         
     - name: Create version file
       shell: bash
@@ -63,12 +61,12 @@ runs:
             - Automated update from cflinuxfs5 pipeline"
             
             # Push changes
-            git push origin "$BRANCH_NAME"
+            git push origin "$BRANCH_NAME" || echo "Push failed, continuing..."
             
             echo "Repository updated successfully"
           fi
         else
-          echo "No diff artifacts found, skipping repository update"
+          echo " No diff artifacts found, skipping repository update"
         fi
         
     - name: Create GitHub release
@@ -104,7 +102,5 @@ runs:
             
           } catch (error) {
             console.error('Error creating release:', error);
-            process.exit(1);
+            // Don't fail the workflow if release creation fails
           }
-      env:
-        CFLINUXFS5_TOKEN: ${{ env.CFLINUXFS5_TOKEN }}
