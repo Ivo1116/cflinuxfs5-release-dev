@@ -2,15 +2,10 @@ name: New Rootfs CVEs
 
 on:
   workflow_dispatch:
-    inputs:
-      trigger_reason:
-        description: 'Reason for triggering build'
-        required: false
-        default: 'Manual trigger'
 
 jobs:
   check-cves:
     runs-on: ubuntu-latest
     steps:
       - name: Show trigger reason
-        run: echo "Triggered because: ${{ github.event.inputs.trigger_reason }}"
+        run: echo "Triggered manually"
