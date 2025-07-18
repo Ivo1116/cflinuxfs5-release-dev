@@ -2,11 +2,6 @@ name: New Rootfs CVEs
 
 on:
   workflow_dispatch:
-    # inputs:
-    #   trigger_reason:
-    #     description: 'Reason for triggering build'
-    #     required: false
-    #     default: 'Manual trigger'
 
 jobs:
   check-cves:
