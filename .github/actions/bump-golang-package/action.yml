@@ -1,0 +1,44 @@
+name: Bump Golang Package
+description: Bumps the golang package in cflinuxfs5-release
+inputs:
+  cflinuxfs5-release-path:
+    description: Path to cflinuxfs5-release repo
+    required: true
+  golang-release-path:
+    description: Path to golang-release repo
+    required: true
+  git_user_name:
+    description: Git user name
+    required: true
+  git_user_email:
+    description: Git user email
+    required: true
+  packages:
+    description: JSON array of packages to bump (e.g. ["golang-1-linux"])
+    required: true
+  packages_to_remove:
+    description: JSON array of packages to remove (e.g. [])
+    required: false
+    default: '[]'
+  private_yml:
+    description: Private YML content
+    required: true
+  release_dir:
+    description: Release directory (relative to repo root)
+    required: false
+    default: '.'
+runs:
+  using: "composite"
+  steps:
+    - run: |
+        chmod +x ${{ github.action_path }}/entrypoint.sh
+        ${{ github.action_path }}/entrypoint.sh \
+          "${{ inputs.cflinuxfs5-release-path }}" \
+          "${{ inputs.golang-release-path }}" \
+          "${{ inputs.git_user_name }}" \
+          "${{ inputs.git_user_email }}" \
+          "${{ inputs.packages }}" \
+          "${{ inputs.packages_to_remove }}" \
+          "${{ inputs.private_yml }}" \
+          "${{ inputs.release_dir }}"
+      shell: bash
