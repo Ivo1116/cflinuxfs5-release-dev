@@ -9,54 +9,8 @@ on:
         default: 'Manual trigger'
 
 jobs:
-  check-cves:
+  test:
     runs-on: ubuntu-latest
-    env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
-      GITHUB_TOKEN: ${{ secrets.PUBLIC_ROBOTS_TOKEN }}
     steps:
       - name: Show trigger reason
         run: echo "Triggered because: ${{ github.event.inputs.trigger_reason }}"
-
-      - name: Checkout buildpacks-ci
-        uses: actions/checkout@v4
-        with:
-          repository: cloudfoundry/buildpacks-ci
-          ref: master
-          path: buildpacks-ci
-
-      - name: Checkout new-cves
-        uses: actions/checkout@v4
-        with:
-          repository: cloudfoundry/public-buildpacks-ci-robots
-          path: new-cves
-          token: ${{ secrets.PUBLIC_ROBOTS_TOKEN }}
-
-      - name: Checkout cflinuxfs5
-        uses: actions/checkout@v4
-        with:
-          repository: plamen-bardarov/cflinuxfs5
-          ref: main
-          path: cflinuxfs5
-          token: ${{ secrets.CFLINUXFS5_TOKEN }}
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-
-      - name: Run CVE notifier
-        uses: ./.github/actions/check-for-new-rootfs-cves
-        with:
-          buildpacks-ci-path: buildpacks-ci
-          new-cves-path: new-cves
-          cflinuxfs5-path: cflinuxfs5
-
-      - name: Commit and push changes if any
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Update new CVEs for cflinuxfs5"
-          branch: main
-          repository: new-cves
-          token: ${{ secrets.PUBLIC_ROBOTS_TOKEN }}
