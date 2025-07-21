@@ -118,12 +118,14 @@ jobs:
         with:
           upload-type: stack-s3
           version: ${{ needs.gather-resources.outputs.version }}
+          bucket-name: cflinuxfs5test
 
       - name: Upload receipt to S3
         uses: ./.github/actions/upload-s3
         with:
           upload-type: receipt-s3
           version: ${{ needs.gather-resources.outputs.version }}
+          bucket-name: cflinuxfs5test
 
       # Update repositories
      # - name: Update repositories
