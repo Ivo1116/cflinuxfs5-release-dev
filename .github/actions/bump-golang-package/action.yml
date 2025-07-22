@@ -66,13 +66,11 @@ runs:
         wget -qO- https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64 > /usr/local/bin/bosh
         chmod +x /usr/local/bin/bosh
 
-    - name: Ensure config/final.yml has name in both repos
+    - name: Ensure release-repo/config/final.yml has name
       shell: bash
       run: |
-        printf "name: bosh-package-golang-release\n" > golang-release/config/final.yml
+        mkdir -p release-repo/config
         printf "name: cflinuxfs5-release\n" > release-repo/config/final.yml
-        echo "=== golang-release/config/final.yml ==="
-        cat -A golang-release/config/final.yml
         echo "=== release-repo/config/final.yml ==="
         cat -A release-repo/config/final.yml
 

@@ -19,7 +19,7 @@ for package_to_remove in $(echo "$PACKAGES_TO_REMOVE" | jq -r '.[]'); do
   rm -rf "packages/$package_to_remove"
 done
 
-echo "$PRIVATE_YML" > config/private.yml
+echo "$PRIVATE_YML" >config/private.yml
 
 for package in $(echo "$PACKAGES" | jq -r '.[]'); do
   bosh vendor-package "$package" "$GOLANG_RELEASE_PATH"
@@ -38,3 +38,4 @@ first_version=$(cat "$GOLANG_RELEASE_PATH/packages/$first_package/version")
 git commit -m "Update $package_list packages to $first_version from golang-release
 
 Removed: $(echo "$PACKAGES_TO_REMOVE" | jq -r '. | join(", ")')"
+
