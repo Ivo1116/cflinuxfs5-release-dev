@@ -68,13 +68,17 @@ runs:
 
     - name: Bump Golang Package
       shell: bash
-      env:
-        PACKAGES: ${{ inputs.packages }}
-        PRIVATE_YML: ${{ inputs.private_yml }}
-        RELEASE_SUBDIR: ${{ inputs.release_dir }}
       run: |
         chmod +x $GITHUB_ACTION_PATH/bump-golang-package.sh
-        $GITHUB_ACTION_PATH/bump-golang-package.sh
+        $GITHUB_ACTION_PATH/bump-golang-package.sh \
+          "release-repo" \
+          "golang-release" \
+          "${{ inputs.git_user_name }}" \
+          "${{ inputs.git_user_email }}" \
+          '${{ inputs.packages }}' \
+          '[]' \
+          "${{ inputs.private_yml }}" \
+          "${{ inputs.release_dir }}"
 
     - name: Push changes
       shell: bash
