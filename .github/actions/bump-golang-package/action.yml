@@ -70,8 +70,9 @@ runs:
       shell: bash
       run: |
         mkdir -p golang-release/config
-        echo "name: bosh-package-golang-release" > golang-release/config/final.yml
-        cat golang-release/config/final.yml
+        printf "name: bosh-package-golang-release\n" > golang-release/config/final.yml
+        echo "=== final.yml content ==="
+        cat -A golang-release/config/final.yml
 
     - name: Bump Golang Package
       shell: bash
