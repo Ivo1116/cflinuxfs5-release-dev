@@ -66,6 +66,13 @@ runs:
         wget -qO- https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64 > /usr/local/bin/bosh
         chmod +x /usr/local/bin/bosh
 
+    - name: Ensure golang-release/config/final.yml has name
+      shell: bash
+      run: |
+        if [ ! -f golang-release/config/final.yml ] || ! grep -q '^name:' golang-release/config/final.yml; then
+          echo "name: bosh-package-golang-release" > golang-release/config/final.yml
+        fi
+
     - name: Bump Golang Package
       shell: bash
       run: |

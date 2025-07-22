@@ -163,8 +163,8 @@ jobs:
             ---
             blobstore:
               options:
-                access_key_id: ${{ secrets.CLOUDFOUNDRY_S3_ACCESS_KEY }}
-                secret_access_key: ${{ secrets.CLOUDFOUNDRY_S3_SECRET_KEY }}
+                access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           cflinuxfs_release_repo: ivo1116/cflinuxfs5-release
           cflinuxfs_release_ref: main
           golang_release_repo: cloudfoundry/bosh-package-golang-release
