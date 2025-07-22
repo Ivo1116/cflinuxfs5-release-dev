@@ -94,6 +94,9 @@ runs:
         export BUILDPACKS_CI_DIR="$(pwd)"
         export STACKS_DIR="$(realpath ../${{ inputs.rootfs_path }})"
         export CVES_DIR="$(realpath ../output-new-cves/new-cve-notifications)"
+
+        git config user.name "${{ inputs.git_user_name }}"
+        git config user.email "${{ inputs.git_user_email }}"
         
         # Make sure the CVEs directory exists
         mkdir -p "$CVES_DIR"
