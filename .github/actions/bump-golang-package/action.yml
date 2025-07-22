@@ -117,12 +117,8 @@ runs:
         package_list=$(echo "$PACKAGES" | jq -r 'join(", ")')
         first_package=$(echo "$PACKAGES" | jq -r '.[0]')
         first_version=$(cat "$GOLANG_RELEASE_PATH/packages/$first_package/version")
+        removed_list=$(echo "$PACKAGES_TO_REMOVE" | jq -r '. | join(", ")')
+
         git commit -m "Update $package_list packages to $first_version from golang-release
 
-Removed: $(echo "$PACKAGES_TO_REMOVE" | jq -r '. | join(", ")')"
-
-    - name: Push changes
-      shell: bash
-      run: |
-        cd release-repo
-        git push origin HEAD:${{ inputs.cflinuxfs_release_ref }}
+        Removed: $removed_list"
