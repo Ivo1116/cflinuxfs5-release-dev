@@ -10,6 +10,10 @@ inputs:
   packages:
     description: "JSON array of packages to vendor (e.g. [\"golang-1-linux\"])"
     required: true
+  packages_to_remove:
+    description: "JSON array of packages to remove"
+    required: false
+    default: "[]"
   private_yml:
     description: "YAML string for config/private.yml"
     required: true
@@ -77,16 +81,45 @@ runs:
     - name: Bump Golang Package
       shell: bash
       run: |
-        chmod +x ./bump-golang-package.sh
-        ./bump-golang-package.sh \
-          "release-repo" \
-          "golang-release" \
-          "${{ inputs.git_user_name }}" \
-          "${{ inputs.git_user_email }}" \
-          '${{ inputs.packages }}' \
-          '[]' \
-          "${{ inputs.private_yml }}" \
-          "${{ inputs.release_dir }}"
+        set -euo pipefail
+
+        CFLINUXFS5_RELEASE_PATH="release-repo"
+        GOLANG_RELEASE_PATH="golang-release"
+        GIT_USER_NAME="${{ inputs.git_user_name }}"
+        GIT_USER_EMAIL="${{ inputs.git_user_email }}"
+        PACKAGES='${{ inputs.packages }}'
+        PACKAGES_TO_REMOVE='${{ inputs.packages_to_remove }}'
+        PRIVATE_YML="${{ inputs.private_yml }}"
+        RELEASE_DIR="${{ inputs.release_dir }}"
+
+        cd "$CFLINUXFS5_RELEASE_PATH/$RELEASE_DIR"
+
+        git config user.name "$GIT_USER_NAME"
+        git config user.email "$GIT_USER_EMAIL"
+
+        for package_to_remove in $(echo "$PACKAGES_TO_REMOVE" | jq -r '.[]'); do
+          rm -rf "packages/$package_to_remove"
+        done
+
+        echo "$PRIVATE_YML" >config/private.yml
+
+        for package in $(echo "$PACKAGES" | jq -r '.[]'); do
+          bosh vendor-package "$package" "$GOLANG_RELEASE_PATH"
+        done
+
+        if [ -z "$(git status --porcelain)" ]; then
+          echo "No changes to commit."
+          exit 0
+        fi
+
+        git add -A
+
+        package_list=$(echo "$PACKAGES" | jq -r 'join(", ")')
+        first_package=$(echo "$PACKAGES" | jq -r '.[0]')
+        first_version=$(cat "$GOLANG_RELEASE_PATH/packages/$first_package/version")
+        git commit -m "Update $package_list packages to $first_version from golang-release
+
+Removed: $(echo "$PACKAGES_TO_REMOVE" | jq -r '. | join(", ")')"
 
     - name: Push changes
       shell: bash
