@@ -48,15 +48,22 @@ runs:
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '2.3'
-        bundler-cache: true
+        ruby-version: '2.7'
+        bundler-cache: false
         working-directory: ${{ inputs.buildpacks_ci_path }}
 
     - name: Install dependencies
       shell: bash
       run: |
         cd ${{ inputs.buildpacks_ci_path }}
-        bundle install
+        
+        # Install bundler if needed
+        gem install bundler
+        
+        if ! bundle install --jobs 4 --retry 3; then
+          echo "Standard bundle install failed, trying without development/test groups..."
+          bundle install --without development test --jobs 4 --retry 3
+        fi
 
     - name: Create output directory
       shell: bash
@@ -73,6 +80,21 @@ runs:
         export STACKS_DIR="$(realpath ../${{ inputs.rootfs_path }})"
         export CVES_DIR="$(realpath ../output-new-cves/new-cve-notifications)"
         
+        mkdir -p "$CVES_DIR"
+        
+        echo "Running CVE check with:"
+        echo "  STACK: $STACK"
+        echo "  BUILDPACKS_CI_DIR: $BUILDPACKS_CI_DIR" 
+        echo "  STACKS_DIR: $STACKS_DIR"
+        echo "  CVES_DIR: $CVES_DIR"
+        
+        # Check if the rootfs-cve-notifier exists
+        if [[ ! -f "./lib/rootfs-cve-notifier.rb" ]]; then
+          echo "Error: rootfs-cve-notifier.rb not found in ./lib/"
+          ls -la ./lib/ || echo "lib directory not found"
+          exit 1
+        fi
+        
         bundle exec ruby -r "./lib/rootfs-cve-notifier" -e "
           cve_notifier = RootFSCVENotifier.new('$CVES_DIR', '$STACKS_DIR')
           cve_notifier.run!('$STACK', '${{ inputs.ubuntu_version }}', '${{ inputs.ubuntu_codename }}', [])
@@ -86,9 +108,15 @@ runs:
         git config user.name "${{ inputs.git_user_name }}"
         git config user.email "${{ inputs.git_user_email }}"
         
-        if [[ -n "$(git status --porcelain)" ]]; then
+        # Show git status for debugging
+        echo "Git status in CVEs repo:"
+        git status --porcelain || echo "No git repository or no changes"
+        
+        if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
           echo "changes=true" >> $GITHUB_OUTPUT
           echo "New CVEs detected for ${{ inputs.stack }}"
+          echo "Changed files:"
+          git status --porcelain
         else
           echo "changes=false" >> $GITHUB_OUTPUT
           echo "No new CVEs found for ${{ inputs.stack }}"
