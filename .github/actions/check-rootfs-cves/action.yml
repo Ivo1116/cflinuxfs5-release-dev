@@ -77,6 +77,13 @@ runs:
         mkdir -p output-new-cves
         rsync -a ${{ inputs.cves_repo_path }}/ output-new-cves/
 
+    - name: Set up git identity in output-new-cves
+      shell: bash
+      run: |
+        cd output-new-cves
+        git config user.name "${{ inputs.git_user_name }}"
+        git config user.email "${{ inputs.git_user_email }}"
+
     - name: Test gem loading
       shell: bash
       run: |
@@ -95,9 +102,7 @@ runs:
         export STACKS_DIR="$(realpath ../${{ inputs.rootfs_path }})"
         export CVES_DIR="$(realpath ../output-new-cves/new-cve-notifications)"
 
-        git config user.name "${{ inputs.git_user_name }}"
-        git config user.email "${{ inputs.git_user_email }}"
-        
+       
         # Make sure the CVEs directory exists
         mkdir -p "$CVES_DIR"
         
