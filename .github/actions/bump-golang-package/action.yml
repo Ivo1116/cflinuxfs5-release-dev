@@ -69,6 +69,7 @@ runs:
     - name: Ensure golang-release/config/final.yml has name
       shell: bash
       run: |
+        mkdir -p golang-release/config
         if [ ! -f golang-release/config/final.yml ] || ! grep -q '^name:' golang-release/config/final.yml; then
           echo "name: bosh-package-golang-release" > golang-release/config/final.yml
         fi
