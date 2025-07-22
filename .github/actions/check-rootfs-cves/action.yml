@@ -13,6 +13,14 @@ inputs:
     description: 'Ubuntu codename for CVE checking'
     required: false
     default: 'ubuntu22.04'
+  buildpacks_ci_repo:
+    description: 'Buildpacks CI repository (owner/repo)'
+    required: false
+    default: 'ivo1116/buildpacks-ci'
+  buildpacks_ci_ref:
+    description: 'Buildpacks CI repository ref'
+    required: false
+    default: 'master'
   buildpacks_ci_path:
     description: 'Path to buildpacks-ci repository'
     required: false
@@ -33,6 +41,9 @@ inputs:
     description: 'Git user email for commits'
     required: false
     default: 'cflinuxfs-bot@test.com'
+  github_token:
+    description: 'GitHub token for accessing private repos'
+    required: false
 
 outputs:
   changes_detected:
@@ -45,31 +56,20 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Set up Ruby and install gems manually
-      shell: bash
-      run: |
-        # Use system Ruby (usually 3.0+ on ubuntu-latest)
-        ruby --version
-        
-        cd ${{ inputs.buildpacks_ci_path }}
-        
-        # Check what gems we actually need by looking at the Gemfile
-        echo "=== Gemfile contents ==="
-        cat Gemfile || echo "No Gemfile found"
-        
-        # Install common gems that CVE notifier might need
-        gem install httparty octokit semantic json net-http uri
-        
-        # If there's a Gemfile, try to install without bundle
-        if [[ -f Gemfile ]]; then
-          # Extract gem names from Gemfile and install them
-          grep "^gem" Gemfile | sed "s/gem ['\"]//g" | sed "s/['\"].*//g" | while read -r gemname; do
-            if [[ -n "$gemname" ]]; then
-              echo "Installing gem: $gemname"
-              gem install "$gemname" || echo "Failed to install $gemname, continuing..."
-            fi
-          done
-        fi
+    - name: Checkout buildpacks-ci (forked)
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.buildpacks_ci_repo }}
+        ref: ${{ inputs.buildpacks_ci_ref }}
+        path: ${{ inputs.buildpacks_ci_path }}
+        token: ${{ inputs.github_token || github.token }}
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.1'
+        bundler-cache: true
+        working-directory: ${{ inputs.buildpacks_ci_path }}
 
     - name: Create output directory
       shell: bash
@@ -77,16 +77,20 @@ runs:
         mkdir -p output-new-cves
         rsync -a ${{ inputs.cves_repo_path }}/ output-new-cves/
 
-    - name: Debug buildpacks-ci structure
+    - name: Debug environment
       shell: bash
       run: |
         cd ${{ inputs.buildpacks_ci_path }}
+        echo "=== Ruby version ==="
+        ruby --version
+        echo "=== Bundle version ==="
+        bundle --version
+        echo "=== Gem environment ==="
+        gem env
         echo "=== Buildpacks-ci structure ==="
         ls -la
         echo "=== Lib directory ==="
         ls -la lib/ || echo "No lib directory"
-        echo "=== Looking for CVE notifier ==="
-        find . -name "*cve*" -o -name "*rootfs*" | head -10
 
     - name: Check for new CVEs
       shell: bash
@@ -109,12 +113,11 @@ runs:
         # Check if the rootfs-cve-notifier exists
         if [[ ! -f "./lib/rootfs-cve-notifier.rb" ]]; then
           echo "Error: rootfs-cve-notifier.rb not found in ./lib/"
-          ls -la ./lib/ || echo "lib directory not found"
+          find . -name "*cve*" -o -name "*rootfs*" | head -10
           exit 1
         fi
         
-        # Run without bundle exec since we installed gems manually
-        ruby -r "./lib/rootfs-cve-notifier" -e "
+        bundle exec ruby -r "./lib/rootfs-cve-notifier" -e "
           cve_notifier = RootFSCVENotifier.new('$CVES_DIR', '$STACKS_DIR')
           cve_notifier.run!('$STACK', '${{ inputs.ubuntu_version }}', '${{ inputs.ubuntu_codename }}', [])
         "
