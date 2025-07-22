@@ -29,7 +29,7 @@ jobs:
       - name: Checkout buildpacks-ci
         uses: actions/checkout@v4
         with:
-          repository: cloudfoundry/buildpacks-ci
+          repository: ivo1116/buildpacks-ci
           ref: master
           path: buildpacks-ci
 
