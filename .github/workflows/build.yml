@@ -7,29 +7,108 @@ on:
         description: 'Reason for triggering build'
         required: false
         default: 'Manual trigger'
-  workflow_run:
-    workflows: ["CVE Monitoring"]
-    types: [completed]
-    branches: [main]
-  push:
-    branches: [main]
-    paths:
-      - 'cflinuxfs5/**'
-      - '!cflinuxfs5/receipt.cflinuxfs5.x86_64'
-      - '!cflinuxfs5/README.md'
-      - '!cflinuxfs5/.gitignore'
+  schedule:
+    # Daily at 14:32 UTC (equivalent to original 9:32 AM EST)
+    - cron: '32 14 * * *'
+  # Add repository dispatch for external triggers
   repository_dispatch:
-    types: [golang-update]
+    types: [cve-update, golang-update, rootfs-change]
 
 jobs:
-  # Resource gathering
+  # Step 1: Check for new CVEs (equivalent to original new-rootfs-cves job)
+  check-new-cves:
+    name: Check for New CVEs
+    runs-on: ubuntu-latest
+    outputs:
+      cves_detected: ${{ steps.cve-check.outputs.changes_detected }}
+      cves_updated: ${{ steps.cve-check.outputs.cves_updated }}
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Checkout buildpacks-ci
+        uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/buildpacks-ci
+          ref: master
+          path: buildpacks-ci
+
+      - name: Checkout cflinuxfs5
+        uses: actions/checkout@v4
+        with:
+          repository: plamen-bardarov/cflinuxfs5
+          ref: main
+          path: rootfs
+          token: ${{ secrets.CFLINUXFS5_TOKEN }}
+
+      - name: Checkout CVEs repository
+        uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/public-buildpacks-ci-robots
+          ref: main
+          path: new-cves
+          token: ${{ secrets.PUBLIC_ROBOTS_TOKEN }}
+
+      - name: Check for new CVEs
+        id: cve-check
+        uses: ./.github/actions/check-rootfs-cves
+        with:
+          stack: cflinuxfs5
+          ubuntu_version: 'Ubuntu 22.04'
+          ubuntu_codename: 'ubuntu22.04'
+          buildpacks_ci_path: buildpacks-ci
+          rootfs_path: rootfs
+          cves_repo_path: new-cves
+
+  # Step 2: Only proceed with build if CVEs were detected OR manual trigger
+  determine-build-needed:
+    name: Determine if Build is Needed
+    needs: check-new-cves
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+      trigger_reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - name: Decide if build is needed
+        id: decide
+        run: |
+          # Build if:
+          # 1. CVEs were detected
+          # 2. Manual workflow dispatch
+          # 3. Repository dispatch events
+          # 4. Force build via input
+          
+          if [[ "${{ needs.check-new-cves.outputs.cves_detected }}" == "true" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "reason=New CVEs detected" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "reason=Manual trigger: ${{ github.event.inputs.trigger_reason || 'Manual trigger' }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "reason=Repository dispatch: ${{ github.event.action }}" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "reason=No build trigger conditions met" >> $GITHUB_OUTPUT
+          fi
+
   gather-resources:
     name: Gather Resources
+    needs: [check-new-cves, determine-build-needed]
     runs-on: ubuntu-latest
+    # Only run if build is needed
+    if: needs.determine-build-needed.outputs.should_build == 'true'
     outputs:
       previous-version: ${{ steps.previous-release.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
+      - name: Log build reason
+        run: |
+          echo "🚀 Build triggered: ${{ needs.determine-build-needed.outputs.trigger_reason }}"
+          if [[ "${{ needs.check-new-cves.outputs.cves_detected }}" == "true" ]]; then
+            echo "📋 New CVEs were detected and processed"
+          fi
+
       - name: Get previous rootfs release
         id: previous-release
         uses: actions/github-script@v7
@@ -47,7 +126,6 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          # Version generation logic (bump to RC)
           PREVIOUS="${{ steps.previous-release.outputs.tag }}"
           PREVIOUS=${PREVIOUS#v}
           
@@ -66,13 +144,39 @@ jobs:
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-  # Main build and process job - now using actions directly
+  bump-golang-package:
+    name: Bump Golang Package
+    runs-on: ubuntu-latest
+    needs: [determine-build-needed, gather-resources]
+    if: needs.determine-build-needed.outputs.should_build == 'true'
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+        
+      - name: Bump Golang Package
+        uses: ./.github/actions/bump-golang-package
+        with:
+          git_user_name: "cflinuxfs5-bot"
+          git_user_email: "cflinuxfs5-bot@test.com"
+          packages: '["golang-1-linux"]'
+          private_yml: |
+            ---
+            blobstore:
+              options:
+                access_key_id: ${{ secrets.CLOUDFOUNDRY_S3_ACCESS_KEY }}
+                secret_access_key: ${{ secrets.CLOUDFOUNDRY_S3_SECRET_KEY }}
+          cflinuxfs_release_repo: plamen-bardarov/cflinuxfs5-release
+          cflinuxfs_release_ref: main
+          golang_release_repo: cloudfoundry/bosh-package-golang-release
+          golang_release_ref: main
+          github_token: ${{ secrets.CFLINUXFS5_TOKEN }}
+
   build-and-process:
     name: Build and Process Rootfs
-    needs: gather-resources
+    needs: [determine-build-needed, gather-resources]
     runs-on: ubuntu-latest
+    if: needs.determine-build-needed.outputs.should_build == 'true'
     env:
-      # Make secrets available as environment variables
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
@@ -128,7 +232,7 @@ jobs:
           bucket-name: cflinuxfs5test
 
       # Update repositories
-     # - name: Update repositories
+      # - name: Update repositories
      #   uses: ./.github/actions/update-repos
      #   with:
      #     version: ${{ needs.gather-resources.outputs.version }}
@@ -143,3 +247,32 @@ jobs:
             receipt-artifacts/
             public-robots-artifacts/
           retention-days: 30
+
+  # Summary job to show what happened
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [check-new-cves, determine-build-needed, gather-resources, build-and-process]
+    if: always()
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.check-new-cves.outputs.cves_detected }}" == "true" ]]; then
+            echo "**CVE Check**: New CVEs detected and processed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**CVE Check**: No new CVEs found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.determine-build-needed.outputs.should_build }}" == "true" ]]; then
+            echo "**Build**: ${{ needs.determine-build-needed.outputs.trigger_reason }}" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ needs.gather-resources.result }}" == "success" && "${{ needs.build-and-process.result }}" == "success" ]]; then
+              echo "**Result**: Build completed successfully (v${{ needs.gather-resources.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Result**: Build failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**Build**: Skipped - no trigger conditions met" >> $GITHUB_STEP_SUMMARY
+          fi

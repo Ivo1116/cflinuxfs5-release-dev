@@ -1,44 +1,83 @@
-name: Bump Golang Package
-description: Bumps the golang package in cflinuxfs5-release
+name: "Bump Golang Package"
+description: "Vendors the latest golang package from bosh-package-golang-release into a BOSH release repo"
 inputs:
-  cflinuxfs5-release-path:
-    description: Path to cflinuxfs5-release repo
-    required: true
-  golang-release-path:
-    description: Path to golang-release repo
-    required: true
   git_user_name:
-    description: Git user name
+    description: "Git user name for commits"
     required: true
   git_user_email:
-    description: Git user email
+    description: "Git user email for commits"
     required: true
   packages:
-    description: JSON array of packages to bump (e.g. ["golang-1-linux"])
+    description: "JSON array of packages to vendor (e.g. [\"golang-1-linux\"])"
     required: true
-  packages_to_remove:
-    description: JSON array of packages to remove (e.g. [])
-    required: false
-    default: '[]'
   private_yml:
-    description: Private YML content
+    description: "YAML string for config/private.yml"
     required: true
   release_dir:
-    description: Release directory (relative to repo root)
+    description: "Subdirectory of the release repo (if not root)"
     required: false
-    default: '.'
+    default: ""
+  cflinuxfs_release_repo:
+    description: "GitHub repo (owner/repo) for the BOSH release"
+    required: true
+  cflinuxfs_release_ref:
+    description: "Git ref for the BOSH release"
+    required: false
+    default: "main"
+  golang_release_repo:
+    description: "GitHub repo (owner/repo) for bosh-package-golang-release"
+    required: true
+  golang_release_ref:
+    description: "Git ref for bosh-package-golang-release"
+    required: false
+    default: "main"
+  github_token:
+    description: "GitHub token with push access"
+    required: true
+
 runs:
   using: "composite"
   steps:
-    - run: |
-        chmod +x ${{ github.action_path }}/entrypoint.sh
-        ${{ github.action_path }}/entrypoint.sh \
-          "${{ inputs.cflinuxfs5-release-path }}" \
-          "${{ inputs.golang-release-path }}" \
-          "${{ inputs.git_user_name }}" \
-          "${{ inputs.git_user_email }}" \
-          "${{ inputs.packages }}" \
-          "${{ inputs.packages_to_remove }}" \
-          "${{ inputs.private_yml }}" \
-          "${{ inputs.release_dir }}"
+    - name: Checkout BOSH release repo
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.cflinuxfs_release_repo }}
+        ref: ${{ inputs.cflinuxfs_release_ref }}
+        token: ${{ inputs.github_token }}
+        path: release-repo
+
+    - name: Checkout bosh-package-golang-release
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.golang_release_repo }}
+        ref: ${{ inputs.golang_release_ref }}
+        token: ${{ inputs.github_token }}
+        path: golang-release
+
+    - name: Set up Git
       shell: bash
+      run: |
+        git config --global user.name "${{ inputs.git_user_name }}"
+        git config --global user.email "${{ inputs.git_user_email }}"
+
+    - name: Install BOSH CLI
+      shell: bash
+      run: |
+        wget -qO- https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64 > /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+
+    - name: Bump Golang Package
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        PRIVATE_YML: ${{ inputs.private_yml }}
+        RELEASE_SUBDIR: ${{ inputs.release_dir }}
+      run: |
+        chmod +x $GITHUB_ACTION_PATH/bump-golang-package.sh
+        $GITHUB_ACTION_PATH/bump-golang-package.sh
+
+    - name: Push changes
+      shell: bash
+      run: |
+        cd release-repo
+        git push origin HEAD:${{ inputs.cflinuxfs_release_ref }}
