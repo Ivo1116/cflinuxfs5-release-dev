@@ -77,20 +77,20 @@ runs:
         mkdir -p output-new-cves
         rsync -a ${{ inputs.cves_repo_path }}/ output-new-cves/
 
-    - name: Debug environment
+    - name: Debug bundler and gems
       shell: bash
       run: |
         cd ${{ inputs.buildpacks_ci_path }}
-        echo "=== Ruby version ==="
-        ruby --version
-        echo "=== Bundle version ==="
-        bundle --version
-        echo "=== Gem environment ==="
-        gem env
-        echo "=== Buildpacks-ci structure ==="
-        ls -la
-        echo "=== Lib directory ==="
-        ls -la lib/ || echo "No lib directory"
+        echo "=== Bundler configuration ==="
+        bundle config list
+        echo "=== Bundle show nokogiri ==="
+        bundle show nokogiri || echo "nokogiri not found via bundle show"
+        echo "=== Bundle list (first 10) ==="
+        bundle list | head -10
+        echo "=== Ruby load path ==="
+        bundle exec ruby -e "puts $LOAD_PATH.first(5)"
+        echo "=== Test nokogiri require ==="
+        bundle exec ruby -e "require 'nokogiri'; puts 'nokogiri loaded successfully'" || echo "Failed to load nokogiri"
 
     - name: Check for new CVEs
       shell: bash
@@ -117,9 +117,20 @@ runs:
           exit 1
         fi
         
+        # Debug the Ruby file contents to see what it requires
+        echo "=== Checking rootfs-cve-notifier.rb dependencies ==="
+        head -10 ./lib/rootfs-cve-notifier.rb
+        echo "=== Checking rootfs-cve-feed.rb dependencies ==="
+        head -10 ./lib/rootfs-cve-feed.rb
+        
+        # Run the CVE check with explicit bundler exec
+        echo "=== Running CVE notifier ==="
         bundle exec ruby -r "./lib/rootfs-cve-notifier" -e "
+          puts 'Loading RootFSCVENotifier...'
           cve_notifier = RootFSCVENotifier.new('$CVES_DIR', '$STACKS_DIR')
+          puts 'Running CVE check...'
           cve_notifier.run!('$STACK', '${{ inputs.ubuntu_version }}', '${{ inputs.ubuntu_codename }}', [])
+          puts 'CVE check completed.'
         "
 
     - name: Check for changes
