@@ -103,6 +103,14 @@ runs:
 
         echo "$PRIVATE_YML" >config/private.yml
 
+        # Ensure golang-release/config/final.yml has a name
+        mkdir -p "$GOLANG_RELEASE_PATH/config"
+        if ! grep -q '^name:' "$GOLANG_RELEASE_PATH/config/final.yml" 2>/dev/null; then
+          echo "name: bosh-package-golang-release" > "$GOLANG_RELEASE_PATH/config/final.yml"
+        fi
+        echo "=== $GOLANG_RELEASE_PATH/config/final.yml ==="
+        cat -A "$GOLANG_RELEASE_PATH/config/final.yml"
+
         for package in $(echo "$PACKAGES" | jq -r '.[]'); do
           bosh vendor-package "$package" "$GOLANG_RELEASE_PATH"
         done
