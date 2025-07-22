@@ -77,8 +77,8 @@ runs:
     - name: Bump Golang Package
       shell: bash
       run: |
-        chmod +x bump-golang-package.sh
-        bump-golang-package.sh \
+        chmod +x ./bump-golang-package.sh
+        ./bump-golang-package.sh \
           "release-repo" \
           "golang-release" \
           "${{ inputs.git_user_name }}" \
