@@ -48,22 +48,10 @@ runs:
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '2.7'
-        bundler-cache: false
+        # Use Ruby 3.2 to match the Bundler requirements
+        ruby-version: '3.2'
+        bundler-cache: true
         working-directory: ${{ inputs.buildpacks_ci_path }}
-
-    - name: Install dependencies
-      shell: bash
-      run: |
-        cd ${{ inputs.buildpacks_ci_path }}
-        
-        # Install bundler if needed
-        gem install bundler
-        
-        if ! bundle install --jobs 4 --retry 3; then
-          echo "Standard bundle install failed, trying without development/test groups..."
-          bundle install --without development test --jobs 4 --retry 3
-        fi
 
     - name: Create output directory
       shell: bash
@@ -80,6 +68,7 @@ runs:
         export STACKS_DIR="$(realpath ../${{ inputs.rootfs_path }})"
         export CVES_DIR="$(realpath ../output-new-cves/new-cve-notifications)"
         
+        # Make sure the CVEs directory exists
         mkdir -p "$CVES_DIR"
         
         echo "Running CVE check with:"
