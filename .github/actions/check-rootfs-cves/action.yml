@@ -45,19 +45,48 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        # Use Ruby 3.2 to match the Bundler requirements
-        ruby-version: '3.2'
-        bundler-cache: true
-        working-directory: ${{ inputs.buildpacks_ci_path }}
+    - name: Set up Ruby and install gems manually
+      shell: bash
+      run: |
+        # Use system Ruby (usually 3.0+ on ubuntu-latest)
+        ruby --version
+        
+        cd ${{ inputs.buildpacks_ci_path }}
+        
+        # Check what gems we actually need by looking at the Gemfile
+        echo "=== Gemfile contents ==="
+        cat Gemfile || echo "No Gemfile found"
+        
+        # Install common gems that CVE notifier might need
+        gem install httparty octokit semantic json net-http uri
+        
+        # If there's a Gemfile, try to install without bundle
+        if [[ -f Gemfile ]]; then
+          # Extract gem names from Gemfile and install them
+          grep "^gem" Gemfile | sed "s/gem ['\"]//g" | sed "s/['\"].*//g" | while read -r gemname; do
+            if [[ -n "$gemname" ]]; then
+              echo "Installing gem: $gemname"
+              gem install "$gemname" || echo "Failed to install $gemname, continuing..."
+            fi
+          done
+        fi
 
     - name: Create output directory
       shell: bash
       run: |
         mkdir -p output-new-cves
         rsync -a ${{ inputs.cves_repo_path }}/ output-new-cves/
+
+    - name: Debug buildpacks-ci structure
+      shell: bash
+      run: |
+        cd ${{ inputs.buildpacks_ci_path }}
+        echo "=== Buildpacks-ci structure ==="
+        ls -la
+        echo "=== Lib directory ==="
+        ls -la lib/ || echo "No lib directory"
+        echo "=== Looking for CVE notifier ==="
+        find . -name "*cve*" -o -name "*rootfs*" | head -10
 
     - name: Check for new CVEs
       shell: bash
@@ -84,7 +113,8 @@ runs:
           exit 1
         fi
         
-        bundle exec ruby -r "./lib/rootfs-cve-notifier" -e "
+        # Run without bundle exec since we installed gems manually
+        ruby -r "./lib/rootfs-cve-notifier" -e "
           cve_notifier = RootFSCVENotifier.new('$CVES_DIR', '$STACKS_DIR')
           cve_notifier.run!('$STACK', '${{ inputs.ubuntu_version }}', '${{ inputs.ubuntu_codename }}', [])
         "
@@ -96,10 +126,6 @@ runs:
         cd output-new-cves
         git config user.name "${{ inputs.git_user_name }}"
         git config user.email "${{ inputs.git_user_email }}"
-        
-        # Show git status for debugging
-        echo "Git status in CVEs repo:"
-        git status --porcelain || echo "No git repository or no changes"
         
         if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
           echo "changes=true" >> $GITHUB_OUTPUT
