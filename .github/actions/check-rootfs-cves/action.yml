@@ -77,20 +77,14 @@ runs:
         mkdir -p output-new-cves
         rsync -a ${{ inputs.cves_repo_path }}/ output-new-cves/
 
-    - name: Debug bundler and gems
+    - name: Test gem loading
       shell: bash
       run: |
         cd ${{ inputs.buildpacks_ci_path }}
-        echo "=== Bundler configuration ==="
-        bundle config list
-        echo "=== Bundle show nokogiri ==="
-        bundle show nokogiri || echo "nokogiri not found via bundle show"
-        echo "=== Bundle list (first 10) ==="
-        bundle list | head -10
-        echo "=== Ruby load path ==="
-        bundle exec ruby -e "puts $LOAD_PATH.first(5)"
-        echo "=== Test nokogiri require ==="
+        echo "=== Testing nokogiri ==="
         bundle exec ruby -e "require 'nokogiri'; puts 'nokogiri loaded successfully'" || echo "Failed to load nokogiri"
+        echo "=== Testing octokit ==="
+        bundle exec ruby -e "require 'octokit'; puts 'octokit loaded successfully'" || echo "Failed to load octokit"
 
     - name: Check for new CVEs
       shell: bash
@@ -117,21 +111,41 @@ runs:
           exit 1
         fi
         
-        # Debug the Ruby file contents to see what it requires
-        echo "=== Checking rootfs-cve-notifier.rb dependencies ==="
-        head -10 ./lib/rootfs-cve-notifier.rb
-        echo "=== Checking rootfs-cve-feed.rb dependencies ==="
-        head -10 ./lib/rootfs-cve-feed.rb
+        # Create a wrapper script to ensure proper bundler environment
+        cat > run_cve_check.rb << 'EOF'
+        #!/usr/bin/env ruby
         
-        # Run the CVE check with explicit bundler exec
-        echo "=== Running CVE notifier ==="
-        bundle exec ruby -r "./lib/rootfs-cve-notifier" -e "
-          puts 'Loading RootFSCVENotifier...'
-          cve_notifier = RootFSCVENotifier.new('$CVES_DIR', '$STACKS_DIR')
-          puts 'Running CVE check...'
-          cve_notifier.run!('$STACK', '${{ inputs.ubuntu_version }}', '${{ inputs.ubuntu_codename }}', [])
-          puts 'CVE check completed.'
-        "
+        puts "Loading dependencies..."
+        require 'bundler/setup'
+        require 'nokogiri'
+        require 'octokit'
+        
+        puts "Loading CVE notifier..."
+        require_relative './lib/rootfs-cve-notifier'
+        
+        cves_dir = ENV['CVES_DIR']
+        stacks_dir = ENV['STACKS_DIR']
+        stack = ENV['STACK']
+        ubuntu_version = ENV['UBUNTU_VERSION'] || 'Ubuntu 22.04'
+        ubuntu_codename = ENV['UBUNTU_CODENAME'] || 'ubuntu22.04'
+        
+        puts "Initializing CVE notifier with:"
+        puts "  CVEs dir: #{cves_dir}"
+        puts "  Stacks dir: #{stacks_dir}"
+        puts "  Stack: #{stack}"
+        
+        cve_notifier = RootFSCVENotifier.new(cves_dir, stacks_dir)
+        puts "Running CVE check..."
+        cve_notifier.run!(stack, ubuntu_version, ubuntu_codename, [])
+        puts "CVE check completed successfully."
+        EOF
+        
+        # Set additional environment variables
+        export UBUNTU_VERSION="${{ inputs.ubuntu_version }}"
+        export UBUNTU_CODENAME="${{ inputs.ubuntu_codename }}"
+        
+        # Run the CVE check
+        bundle exec ruby run_cve_check.rb
 
     - name: Check for changes
       id: check-changes
@@ -140,6 +154,9 @@ runs:
         cd output-new-cves
         git config user.name "${{ inputs.git_user_name }}"
         git config user.email "${{ inputs.git_user_email }}"
+        
+        echo "=== Checking git status ==="
+        git status --porcelain || echo "No git repository"
         
         if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
           echo "changes=true" >> $GITHUB_OUTPUT
