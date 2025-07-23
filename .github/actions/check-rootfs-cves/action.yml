@@ -8,11 +8,11 @@ inputs:
   ubuntu_version:
     description: 'Ubuntu version description'
     required: false
-    default: 'Ubuntu 22.04'
+    default: 'Ubuntu 24.04'
   ubuntu_codename:
     description: 'Ubuntu codename for CVE checking'
     required: false
-    default: 'ubuntu22.04'
+    default: 'ubuntu24.04'
   buildpacks_ci_repo:
     description: 'Buildpacks CI repository (owner/repo)'
     required: false
@@ -134,8 +134,8 @@ runs:
         cves_dir = ENV['CVES_DIR']
         stacks_dir = ENV['STACKS_DIR']
         stack = ENV['STACK']
-        ubuntu_version = ENV['UBUNTU_VERSION'] || 'Ubuntu 22.04'
-        ubuntu_codename = ENV['UBUNTU_CODENAME'] || 'ubuntu22.04'
+        ubuntu_version = ENV['UBUNTU_VERSION'] || 'Ubuntu 24.04'
+        ubuntu_codename = ENV['UBUNTU_CODENAME'] || 'ubuntu24.04'
         
         puts "Initializing CVE notifier with:"
         puts "  CVEs dir: #{cves_dir}"

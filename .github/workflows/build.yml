@@ -54,8 +54,8 @@ jobs:
         uses: ./.github/actions/check-rootfs-cves
         with:
           stack: cflinuxfs5
-          ubuntu_version: 'Ubuntu 22.04'
-          ubuntu_codename: 'ubuntu22.04'
+          ubuntu_version: 'Ubuntu 24.04'
+          ubuntu_codename: 'ubuntu24.04'
           buildpacks_ci_path: buildpacks-ci
           rootfs_path: rootfs
           cves_repo_path: new-cves
