@@ -112,7 +112,7 @@ runs:
         cat -A "$GOLANG_RELEASE_PATH/config/final.yml"
 
         # Ensure at least one dev release exists in golang-release
-        pushd "$GOLANG_RELEASE_PATH"
+        pushd "$GITHUB_WORKSPACE/$GOLANG_RELEASE_PATH"
         bosh create-release --force --tarball=tmp.tgz
         rm tmp.tgz
         popd
