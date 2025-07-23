@@ -74,7 +74,10 @@ runs:
       shell: bash
       run: |
         mkdir -p release-repo/config
-        printf "name: cflinuxfs5-release\n%s\n" "${{ inputs.private_yml }}" > release-repo/config/final.yml
+        {
+          echo "name: cflinuxfs5-release"
+          echo "${{ inputs.private_yml }}"
+        } > release-repo/config/final.yml
         echo "=== release-repo/config/final.yml ==="
         cat -A release-repo/config/final.yml
 

@@ -160,9 +160,10 @@ jobs:
           git_user_email: "cflinuxfs5-bot@test.com"
           packages: '["golang-1-linux"]'
           private_yml: |
-            ---
             blobstore:
+              provider: s3
               options:
+                bucket_name: your-bucket
                 access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
                 secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           cflinuxfs_release_repo: ivo1116/cflinuxfs5-release
