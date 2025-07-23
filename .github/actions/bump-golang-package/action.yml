@@ -85,6 +85,7 @@ runs:
 
         CFLINUXFS5_RELEASE_PATH="release-repo"
         GOLANG_RELEASE_PATH="golang-release"
+        GOLANG_RELEASE_ABS="$GITHUB_WORKSPACE/$GOLANG_RELEASE_PATH"
         GIT_USER_NAME="${{ inputs.git_user_name }}"
         GIT_USER_EMAIL="${{ inputs.git_user_email }}"
         PACKAGES='${{ inputs.packages }}'
@@ -104,21 +105,21 @@ runs:
         echo "$PRIVATE_YML" >config/private.yml
 
         # Ensure golang-release/config/final.yml has a name
-        mkdir -p "$GOLANG_RELEASE_PATH/config"
-        if ! grep -q '^name:' "$GOLANG_RELEASE_PATH/config/final.yml" 2>/dev/null; then
-          echo "name: bosh-package-golang-release" > "$GOLANG_RELEASE_PATH/config/final.yml"
+        mkdir -p "$GOLANG_RELEASE_ABS/config"
+        if ! grep -q '^name:' "$GOLANG_RELEASE_ABS/config/final.yml" 2>/dev/null; then
+          echo "name: bosh-package-golang-release" > "$GOLANG_RELEASE_ABS/config/final.yml"
         fi
-        echo "=== $GOLANG_RELEASE_PATH/config/final.yml ==="
-        cat -A "$GOLANG_RELEASE_PATH/config/final.yml"
+        echo "=== $GOLANG_RELEASE_ABS/config/final.yml ==="
+        cat -A "$GOLANG_RELEASE_ABS/config/final.yml"
 
         # Ensure at least one dev release exists in golang-release
-        pushd "$GITHUB_WORKSPACE/$GOLANG_RELEASE_PATH"
+        pushd "$GOLANG_RELEASE_ABS"
         bosh create-release --force --tarball=tmp.tgz
         rm tmp.tgz
         popd
 
         for package in $(echo "$PACKAGES" | jq -r '.[]'); do
-          bosh vendor-package "$package" "$GOLANG_RELEASE_PATH"
+          bosh vendor-package "$package" "$GOLANG_RELEASE_ABS"
         done
 
         if [ -z "$(git status --porcelain)" ]; then
@@ -130,7 +131,7 @@ runs:
 
         package_list=$(echo "$PACKAGES" | jq -r 'join(", ")')
         first_package=$(echo "$PACKAGES" | jq -r '.[0]')
-        first_version=$(cat "$GOLANG_RELEASE_PATH/packages/$first_package/version")
+        first_version=$(cat "$GOLANG_RELEASE_ABS/packages/$first_package/version")
         removed_list=$(echo "$PACKAGES_TO_REMOVE" | jq -r '. | join(", ")')
 
         git commit -m "Update $package_list packages to $first_version from golang-release
