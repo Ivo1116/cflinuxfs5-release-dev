@@ -111,6 +111,12 @@ runs:
         echo "=== $GOLANG_RELEASE_PATH/config/final.yml ==="
         cat -A "$GOLANG_RELEASE_PATH/config/final.yml"
 
+        # Ensure at least one dev release exists in golang-release
+        pushd "$GOLANG_RELEASE_PATH"
+        bosh create-release --force --tarball=tmp.tgz
+        rm tmp.tgz
+        popd
+
         for package in $(echo "$PACKAGES" | jq -r '.[]'); do
           bosh vendor-package "$package" "$GOLANG_RELEASE_PATH"
         done
