@@ -70,11 +70,11 @@ runs:
         wget -qO- https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64 > /usr/local/bin/bosh
         chmod +x /usr/local/bin/bosh
 
-    - name: Ensure release-repo/config/final.yml has name
+    - name: Ensure release-repo/config/final.yml has name and blobstore
       shell: bash
       run: |
         mkdir -p release-repo/config
-        printf "name: cflinuxfs5-release\n" > release-repo/config/final.yml
+        printf "name: cflinuxfs5-release\n%s\n" "${{ inputs.private_yml }}" > release-repo/config/final.yml
         echo "=== release-repo/config/final.yml ==="
         cat -A release-repo/config/final.yml
 
