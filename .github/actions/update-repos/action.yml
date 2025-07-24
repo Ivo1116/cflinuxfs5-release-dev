@@ -12,7 +12,7 @@ runs:
     - name: Checkout public-robots
       uses: actions/checkout@v4
       with:
-        repository: cloudfoundry/public-buildpacks-ci-robots
+        repository: ivo1116/public-buildpacks-ci-robots
         ref: main
         path: public-robots
         token: ${{ env.PUBLIC_ROBOTS_TOKEN }}
