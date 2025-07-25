@@ -51,13 +51,13 @@ runs:
         ref: master
         path: bosh-deployment
 
-    - name: Checkout buildpacks-envs
-      uses: actions/checkout@v4
-      with:
-        repository: ivo1116/buildpacks-envs
-        ref: master
-        path: bbl-state
-        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
+#    - name: Checkout buildpacks-envs
+#      uses: actions/checkout@v4
+#      with:
+#        repository: ivo1116/buildpacks-envs
+#        ref: master
+#        path: bbl-state
+#        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
 
     - name: Checkout buildpacks-ci
       uses: actions/checkout@v4

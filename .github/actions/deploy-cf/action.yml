@@ -54,13 +54,13 @@ runs:
         ref: main
         path: capi-release
 
-    - name: Checkout buildpacks-envs
-      uses: actions/checkout@v4
-      with:
-        repository: ivo1116/buildpacks-envs
-        ref: master
-        path: bbl-state
-        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
+#    - name: Checkout buildpacks-envs
+#      uses: actions/checkout@v4
+#      with:
+#        repository: ivo1116/buildpacks-envs
+#        ref: master
+#        path: bbl-state
+#        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
 
     - name: Get GCP stemcell
       shell: bash
