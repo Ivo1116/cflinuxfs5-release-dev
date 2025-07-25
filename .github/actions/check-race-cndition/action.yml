@@ -1,0 +1,117 @@
+name: 'Check Race Condition'
+description: 'Check for race conditions in rootfs builds - equivalent to Concourse check-for-race-condition job'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  current_version:
+    description: 'Current version being tested'
+    required: true
+
+outputs:
+  success:
+    description: 'Whether race condition check passed'
+    value: ${{ steps.check.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout buildpacks-ci
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-ci
+        ref: master
+        path: buildpacks-ci
+
+    - name: Get latest version
+      id: latest-version
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ env.CFLINUXFS5_TOKEN }}
+        script: |
+          const { data: releases } = await github.rest.repos.listReleases({
+            owner: 'cloudfoundry',
+            repo: '${{ inputs.stack }}',
+            per_page: 1
+          });
+          const latestTag = releases.length > 0 ? releases[0].tag_name : '';
+          core.setOutput('version', latestTag);
+
+    - name: Check for race condition
+      id: check
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        cd buildpacks-ci
+        
+        CURRENT_VERSION="${{ inputs.current_version }}"
+        LATEST_VERSION="${{ steps.latest-version.outputs.version }}"
+        
+        echo "Current version being tested: $CURRENT_VERSION"
+        echo "Latest released version: $LATEST_VERSION"
+        
+        # Remove 'v' prefix if present
+        CURRENT_CLEAN="${CURRENT_VERSION#v}"
+        LATEST_CLEAN="${LATEST_VERSION#v}"
+        
+        if [[ -z "$LATEST_VERSION" ]]; then
+          echo "No previous releases found, no race condition possible"
+          echo "success=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        # Function to compare semantic versions
+        version_compare() {
+          if [[ "$1" == "$2" ]]; then
+            return 0  # Equal
+          fi
+          
+          local IFS=.
+          local i ver1=($1) ver2=($2)
+          
+          # Fill empty fields in ver1 with zeros
+          for ((i=${#ver1[@]}; i<${#ver2[@]}; i++)); do
+            ver1[i]=0
+          done
+          
+          for ((i=0; i<${#ver1[@]}; i++)); do
+            if [[ -z ${ver2[i]} ]]; then
+              ver2[i]=0
+            fi
+            if ((10#${ver1[i]} > 10#${ver2[i]})); then
+              return 1  # ver1 > ver2
+            fi
+            if ((10#${ver1[i]} < 10#${ver2[i]})); then
+              return 2  # ver1 < ver2
+            fi
+          done
+          return 0  # Equal
+        }
+        
+        # Check if current version is newer than or equal to latest
+        if version_compare "$CURRENT_CLEAN" "$LATEST_CLEAN"; then
+          case $? in
+            0|1) # Current is equal or newer
+              echo "No race condition detected. Current version ($CURRENT_VERSION) is >= latest ($LATEST_VERSION)"
+              echo "success=true" >> $GITHUB_OUTPUT
+              ;;
+            2) # Current is older
+              echo "RACE CONDITION DETECTED!"
+              echo "Current version ($CURRENT_VERSION) is older than latest released version ($LATEST_VERSION)"
+              echo "This indicates another build completed and was released while this build was running."
+              echo "success=false" >> $GITHUB_OUTPUT
+              exit 1
+              ;;
+          esac
+        fi
+
+    - name: Log race condition result
+      shell: bash
+      run: |
+        if [[ "${{ steps.check.outputs.success }}" == "true" ]]; then
+          echo "✅ Race condition check passed - safe to proceed with release"
+        else
+          echo "❌ Race condition detected - blocking release"
+        fi

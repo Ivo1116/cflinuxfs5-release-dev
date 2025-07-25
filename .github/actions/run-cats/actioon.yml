@@ -1,0 +1,185 @@
+name: 'Run CATs'
+description: 'Run Cloud Foundry Acceptance Tests - equivalent to Concourse cats job'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  version:
+    description: 'Version number'
+    required: true
+  env_name:
+    description: 'Environment name'
+    required: false
+    default: 'cflinuxfs5'
+  apps_domain:
+    description: 'Apps domain'
+    required: false
+    default: 'cflinuxfs5.buildpacks-gcp.ci.cf-app.com'
+  nodes:
+    description: 'Number of parallel nodes for CATs'
+    required: false
+    default: '12'
+  skip_regexp:
+    description: 'Regular expression for tests to skip'
+    required: false
+    default: 'Specifying a specific Stack'
+  flake_attempts:
+    description: 'Number of attempts for flaky tests'
+    required: false
+    default: '3'
+
+outputs:
+  success:
+    description: 'Whether CATs passed'
+    value: ${{ steps.cats.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout CF Acceptance Tests
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/cf-acceptance-tests
+        ref: develop
+        path: cf-acceptance-tests
+
+    - name: Checkout cf-deployment-concourse-tasks
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/cf-deployment-concourse-tasks
+        ref: main
+        path: cf-deployment-concourse-tasks
+
+    - name: Checkout buildpacks-ci
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-ci
+        ref: master
+        path: buildpacks-ci
+
+    - name: Checkout buildpacks-envs
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-envs
+        ref: master
+        path: bbl-state
+        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install CF CLI
+      shell: bash
+      run: |
+        # Install CF CLI v8
+        wget -q -O - https://packages.cloudfoundry.org/debian/cli.cloudfoundry.org.key | sudo apt-key add -
+        echo "deb https://packages.cloudfoundry.org/debian stable main" | sudo tee /etc/apt/sources.list.d/cloudfoundry-cli.list
+        sudo apt-get update
+        sudo apt-get install cf8-cli
+
+    - name: Get CF credentials
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export ENV_NAME='${{ inputs.env_name }}'
+        
+        # Run equivalent of get-cf-creds task
+        cd ../bbl-state/${{ inputs.env_name }}
+        source <(bbl print-env)
+        
+        # Get CF admin credentials
+        CF_ADMIN_PASSWORD=$(bosh interpolate cf-vars.yml --path /cf_admin_password)
+        
+        echo "CF_ADMIN_PASSWORD=${CF_ADMIN_PASSWORD}" >> $GITHUB_ENV
+
+    - name: Write CATs config
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        # Run equivalent of write-cats-config task
+        cat > ../integration_config.json << EOF
+        {
+          "api": "https://api.${{ inputs.apps_domain }}",
+          "admin_user": "admin",
+          "admin_password": "${CF_ADMIN_PASSWORD}",
+          "apps_domain": "${{ inputs.apps_domain }}",
+          "skip_ssl_validation": true,
+          "use_http": false,
+          "backend": "diego",
+          "include_apps": true,
+          "include_backend_compatibility": false,
+          "include_detect": true,
+          "include_docker": true,
+          "include_internet_dependent": true,
+          "include_privileged_container_support": false,
+          "include_route_services": true,
+          "include_routing": true,
+          "include_security_groups": true,
+          "include_services": true,
+          "include_ssh": true,
+          "include_sso": true,
+          "include_tasks": true,
+          "include_v3": true,
+          "include_zipkin": true,
+          "stacks": ["${{ inputs.stack }}"],
+          "credhub_mode": "assisted",
+          "credhub_client": "credhub_admin_client",
+          "timeout_scale": 1.0,
+          "isolation_segment_name": "",
+          "isolation_segment_domain": "",
+          "enable_color": false,
+          "artifact_directory": "cats-artifacts"
+        }
+        EOF
+
+    - name: Run CATs
+      id: cats
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        cd cf-acceptance-tests
+        
+        export CONFIG="../integration_config.json"
+        export NODES="${{ inputs.nodes }}"
+        export SKIP_REGEXP="${{ inputs.skip_regexp }}"
+        export FLAKE_ATTEMPTS="${{ inputs.flake_attempts }}"
+        
+        # Set up test environment
+        mkdir -p cats-artifacts
+        
+        # Run CATs with retry logic
+        for attempt in $(seq 1 $FLAKE_ATTEMPTS); do
+          echo "CATs attempt $attempt/$FLAKE_ATTEMPTS"
+          
+          if ./bin/test \
+            -keepGoing \
+            -randomizeAllSpecs \
+            -skipPackage=helpers \
+            -slowSpecThreshold=120 \
+            -nodes=$NODES \
+            -skip="$SKIP_REGEXP"; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "CATs attempt $attempt failed"
+            if [[ $attempt -eq $FLAKE_ATTEMPTS ]]; then
+              echo "success=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            sleep 30
+          fi
+        done
+
+    - name: Upload CATs artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cats-artifacts-${{ inputs.version }}
+        path: cf-acceptance-tests/cats-artifacts/
+        retention-days: 7

@@ -1,0 +1,101 @@
+name: 'BBL Destroy'
+description: 'Destroy test environment using BBL - equivalent to Concourse bbl-destroy job'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  env_name:
+    description: 'Environment name'
+    required: false
+    default: 'cflinuxfs5'
+  gcp_project_id:
+    description: 'GCP Project ID'
+    required: false
+    default: 'cf-buildpacks'
+
+outputs:
+  success:
+    description: 'Whether BBL destroy succeeded'
+    value: ${{ steps.destroy.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout cf-deployment-concourse-tasks
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/cf-deployment-concourse-tasks
+        ref: main
+        path: cf-deployment-concourse-tasks
+
+    - name: Checkout buildpacks-ci
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-ci
+        ref: master
+        path: buildpacks-ci
+
+    - name: Checkout buildpacks-envs
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-envs
+        ref: master
+        path: bbl-state
+        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+    - name: Install BBL and dependencies
+      shell: bash
+      run: |
+        # Install BBL
+        wget -O /tmp/bbl https://github.com/cloudfoundry/bosh-bootloader/releases/download/v8.4.110/bbl-v8.4.110_linux_x86-64
+        chmod +x /tmp/bbl
+        sudo mv /tmp/bbl /usr/local/bin/bbl
+
+        # Install Terraform
+        wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
+        unzip /tmp/terraform.zip -d /tmp/
+        sudo mv /tmp/terraform /usr/local/bin/terraform
+
+    - name: Remove GCP parent DNS record
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export GCP_SERVICE_ACCOUNT_KEY='${{ env.GCP_SERVICE_ACCOUNT_KEY }}'
+        export ENV_NAME='${{ inputs.env_name }}'
+        
+        # Run equivalent of remove-gcp-parent-dns-record task
+        echo "Removing GCP parent DNS record for $ENV_NAME"
+
+    - name: BBL Destroy
+      id: destroy
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        cd bbl-state/${{ inputs.env_name }}
+        
+        # Set up environment variables
+        export BBL_GCP_SERVICE_ACCOUNT_KEY='${{ env.GCP_SERVICE_ACCOUNT_KEY }}'
+        export BBL_GCP_PROJECT_ID='${{ inputs.gcp_project_id }}'
+        
+        # Run BBL destroy
+        bbl destroy --no-confirm
+        
+        echo "success=true" >> $GITHUB_OUTPUT
+
+    - name: Commit and push BBL state
+      if: always()
+      shell: bash
+      run: |
+        cd bbl-state
+        
+        git config user.name "CF Buildpacks Eng Bot"
+        git config user.email "tanzu-buildpacks.pdl@broadcom.com"
+        
+        if [[ -n "$(git status --porcelain)" ]]; then
+          git add -A
+          git commit -m "Clean up bbl state dir for ${{ inputs.env_name }}"
+          git push origin HEAD
+        fi

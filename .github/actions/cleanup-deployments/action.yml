@@ -1,0 +1,80 @@
+name: 'Cleanup Deployments'
+description: 'Clean up CF deployments - equivalent to Concourse delete-deployment job'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  env_name:
+    description: 'Environment name'
+    required: false
+    default: 'cflinuxfs5'
+
+outputs:
+  success:
+    description: 'Whether cleanup succeeded'
+    value: ${{ steps.cleanup.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout buildpacks-ci
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-ci
+        ref: master
+        path: buildpacks-ci
+
+    - name: Checkout buildpacks-envs
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-envs
+        ref: master
+        path: bbl-state
+        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+    - name: Install BOSH CLI
+      shell: bash
+      run: |
+        wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
+        chmod +x /tmp/bosh
+        sudo mv /tmp/bosh /usr/local/bin/bosh
+
+    - name: Create deployment source config
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export ENV_NAME='${{ inputs.env_name }}'
+        
+        # Run equivalent of create-deployment-source-config task
+        mkdir -p ../deployment-source-config
+        
+        cd ../bbl-state/${{ inputs.env_name }}
+        bbl print-env > ../../deployment-source-config/source_file.yml
+
+    - name: Cleanup deployments
+      id: cleanup
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        cd deployment-source-config
+        source source_file.yml
+        
+        echo "Deleting rootfs smoke test deployment..."
+        bosh -d rootfs-smoke-test delete-deployment --force || echo "Rootfs smoke test deployment not found or already deleted"
+        
+        echo "Deleting CF deployment..."
+        bosh -d cf delete-deployment --force || echo "CF deployment not found or already deleted"
+        
+        echo "success=true" >> $GITHUB_OUTPUT
+
+    - name: Verify cleanup
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        
+        echo "Remaining deployments:"
+        bosh deployments || echo "No deployments found"

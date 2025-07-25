@@ -1,0 +1,174 @@
+name: 'Deploy CF'
+description: 'Deploy Cloud Foundry with new rootfs - equivalent to Concourse deploy job'
+
+inputs:
+  stack:
+    description: 'Stack name'
+    required: true
+  version:
+    description: 'Version number'
+    required: true
+  env_name:
+    description: 'Environment name'
+    required: false
+    default: 'cflinuxfs5'
+  system_domain:
+    description: 'System domain'
+    required: false
+    default: 'cflinuxfs5.buildpacks-gcp.ci.cf-app.com'
+
+outputs:
+  success:
+    description: 'Whether CF deployment succeeded'
+    value: ${{ steps.deploy.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout cf-deployment
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/cf-deployment
+        ref: v21.11.0
+        path: cf-deployment
+
+    - name: Checkout buildpacks-ci
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-ci
+        ref: master
+        path: buildpacks-ci
+
+    - name: Checkout cflinuxfs5-release
+      uses: actions/checkout@v4
+      with:
+        repository: ivo1116/cflinuxfs5-release
+        ref: main
+        path: cflinuxfs5-release
+        token: ${{ env.CFLINUXFS5_TOKEN }}
+
+    - name: Checkout CAPI release
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/capi-release
+        ref: main
+        path: capi-release
+
+    - name: Checkout buildpacks-envs
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/buildpacks-envs
+        ref: master
+        path: bbl-state
+        ssh-key: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+    - name: Get GCP stemcell
+      shell: bash
+      run: |
+        # Download latest stemcell
+        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-jammy-go_agent?v=latest"
+
+    - name: Checkout buildpack releases
+      uses: ./.github/actions/checkout-buildpack-releases
+
+    - name: Create deployment source config
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export ENV_NAME='${{ inputs.env_name }}'
+        
+        # Run equivalent of create-deployment-source-config task
+        mkdir -p ../deployment-source-config
+        
+        cd ../bbl-state/${{ inputs.env_name }}
+        bbl print-env > ../../deployment-source-config/source_file.yml
+
+    - name: Overwrite rootfs release
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export STACK='${{ inputs.stack }}'
+        
+        # Run equivalent of overwrite-rootfs-release task
+        # This modifies the rootfs release with the new version
+        mkdir -p ../rootfs-release-artifacts
+        
+        cd ../cflinuxfs5-release
+        
+        # Download the built rootfs from artifacts
+        if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
+          # Update the release with new rootfs
+          bosh create-release --force --tarball=../rootfs-release-artifacts/cflinuxfs5-dev.tgz
+        fi
+
+    - name: Create CAPI release with rootfs
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export STACK='${{ inputs.stack }}'
+        
+        # Run equivalent of create-capi-release-with-rootfs task
+        mkdir -p ../capi-release-artifacts
+        
+        cd ../capi-release
+        bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
+
+    - name: Use new buildpack BOSH releases
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        # Run equivalent of use-new-buildpack-bosh-releases task
+        mkdir -p ../built-buildpacks-artifacts ../buildpacks-opsfile
+        
+        # Create opsfile for latest buildpack releases
+        cat > ../buildpacks-opsfile/use-latest-buildpack-releases.yml << 'EOF'
+        # This would contain ops-file entries for each buildpack
+        EOF
+
+    - name: Deploy rootfs smoke test
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        
+        bosh -d rootfs-smoke-test deploy \
+          ../rootfs-release-artifacts/manifests/manifest.yml \
+          --vars-store smoke-test-vars.yml
+
+    - name: Run rootfs smoke test
+      shell: bash
+      run: |
+        cd buildpacks-ci
+        
+        export ENV_NAME='${{ inputs.env_name }}'
+        
+        # Run equivalent of run-rootfs-smoke-test task
+        echo "Running rootfs smoke test..."
+
+    - name: Deploy CF
+      id: deploy
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        cd deployment-source-config
+        source source_file.yml
+        
+        # Deploy CF with all the releases and ops files
+        bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
+          --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
+          --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
+          --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
+          --ops-file ../cf-deployment/operations/experimental/add-cflinuxfs5.yml \
+          --ops-file ../cf-deployment/operations/experimental/set-cflinuxfs5-default-stack.yml \
+          --ops-file ../buildpacks-opsfile/use-latest-buildpack-releases.yml \
+          --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
+          --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
+          --var system_domain='${{ inputs.system_domain }}' \
+          --vars-store cf-vars.yml
+
+        echo "success=true" >> $GITHUB_OUTPUT

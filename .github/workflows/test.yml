@@ -1,4 +1,235 @@
+name: Test Rootfs
 
+on:
+  repository_dispatch:
+    types: [rootfs-build-completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to test'
+        required: true
+      skip_cats:
+        description: 'Skip CATs tests'
+        type: boolean
+        default: false
+      skip_cleanup:
+        description: 'Skip infrastructure cleanup (for debugging)'
+        type: boolean
+        default: false
+
+jobs:
+  setup-test-environment:
+    name: Setup Test Environment
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      environment_ready: ${{ steps.bbl-up.outputs.success }}
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Get version info
+        id: get-version
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "version=${{ github.event.client_payload.version }}" >> $GITHUB_OUTPUT
+            echo "BUILD_RUN_ID=${{ github.event.client_payload.workflow_run_id }}" >> $GITHUB_ENV
+          else
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download build artifacts
+        if: env.BUILD_RUN_ID != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: rootfs-build-${{ steps.get-version.outputs.version }}
+          github-token: ${{ secrets.CFLINUXFS5_TOKEN }}
+          run-id: ${{ env.BUILD_RUN_ID }}
+
+      - name: Setup test environment
+        id: bbl-up
+        uses: ./.github/actions/bbl-up
+        with:
+          stack: cflinuxfs5
+          version: ${{ steps.get-version.outputs.version }}
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+          CFLINUXFS5_LB_CERT: ${{ secrets.CFLINUXFS5_LB_CERT }}
+          CFLINUXFS5_LB_KEY: ${{ secrets.CFLINUXFS5_LB_KEY }}
+
+  deploy-cf:
+    name: Deploy CF with New Rootfs
+    needs: setup-test-environment
+    runs-on: ubuntu-latest
+    if: needs.setup-test-environment.outputs.environment_ready == 'true'
+    outputs:
+      deployment_ready: ${{ steps.deploy.outputs.success }}
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Deploy CF
+        id: deploy
+        uses: ./.github/actions/deploy-cf
+        with:
+          stack: cflinuxfs5
+          version: ${{ needs.setup-test-environment.outputs.version }}
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+          CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
+
+  run-cats:
+    name: Run Cloud Foundry Acceptance Tests
+    needs: [setup-test-environment, deploy-cf]
+    runs-on: ubuntu-latest
+    if: needs.deploy-cf.outputs.deployment_ready == 'true' && inputs.skip_cats != true
+    outputs:
+      cats_passed: ${{ steps.cats.outputs.success }}
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Run CATs
+        id: cats
+        uses: ./.github/actions/run-cats
+        with:
+          stack: cflinuxfs5
+          version: ${{ needs.setup-test-environment.outputs.version }}
+          nodes: 12
+          skip_regexp: "Specifying a specific Stack"
+          flake_attempts: 3
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+  check-race-condition:
+    name: Check for Race Conditions
+    needs: [setup-test-environment, deploy-cf, run-cats]
+    runs-on: ubuntu-latest
+    if: always() && needs.deploy-cf.outputs.deployment_ready == 'true'
+    outputs:
+      race_check_passed: ${{ steps.race-check.outputs.success }}
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Check for race condition
+        id: race-check
+        uses: ./.github/actions/check-race-condition
+        with:
+          stack: cflinuxfs5
+          current_version: ${{ needs.setup-test-environment.outputs.version }}
+        env:
+          CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
+
+  cleanup-deployments:
+    name: Cleanup CF Deployments
+    needs: [setup-test-environment, deploy-cf, run-cats, check-race-condition]
+    runs-on: ubuntu-latest
+    if: always() && needs.setup-test-environment.outputs.environment_ready == 'true' && inputs.skip_cleanup != true
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Cleanup deployments
+        uses: ./.github/actions/cleanup-deployments
+        with:
+          stack: cflinuxfs5
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+  destroy-test-environment:
+    name: Destroy Test Environment
+    needs: [setup-test-environment, cleanup-deployments]
+    runs-on: ubuntu-latest
+    if: always() && needs.setup-test-environment.outputs.environment_ready == 'true' && inputs.skip_cleanup != true
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Destroy test environment
+        uses: ./.github/actions/bbl-destroy
+        with:
+          stack: cflinuxfs5
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+
+  trigger-release-workflow:
+    name: Trigger Release Workflow
+    needs: [setup-test-environment, deploy-cf, run-cats, check-race-condition]
+    runs-on: ubuntu-latest
+    if: |
+      always() && 
+      needs.setup-test-environment.outputs.environment_ready == 'true' &&
+      needs.deploy-cf.outputs.deployment_ready == 'true' &&
+      (needs.run-cats.outputs.cats_passed == 'true' || inputs.skip_cats == true) &&
+      needs.check-race-condition.outputs.race_check_passed == 'true'
+    steps:
+      - name: Trigger Release Workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.CFLINUXFS5_TOKEN }}
+          event-type: rootfs-tests-completed
+          client-payload: |
+            {
+              "version": "${{ needs.setup-test-environment.outputs.version }}",
+              "cats_passed": "${{ needs.run-cats.outputs.cats_passed || 'skipped' }}",
+              "workflow_run_id": "${{ github.run_id }}"
+            }
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [setup-test-environment, deploy-cf, run-cats, check-race-condition, cleanup-deployments, destroy-test-environment]
+    if: always()
+    steps:
+      - name: Test Summary
+        run: |
+          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.setup-test-environment.outputs.environment_ready }}" == "true" ]]; then
+            echo "**Environment Setup**: Success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Environment Setup**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.deploy-cf.outputs.deployment_ready }}" == "true" ]]; then
+            echo "**CF Deployment**: Success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**CF Deployment**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ inputs.skip_cats }}" == "true" ]]; then
+            echo "**CATs**: Skipped" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.run-cats.outputs.cats_passed }}" == "true" ]]; then
+            echo "**CATs**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**CATs**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.check-race-condition.outputs.race_check_passed }}" == "true" ]]; then
+            echo "**Race Condition Check**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Race Condition Check**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version Tested**: ${{ needs.setup-test-environment.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Determine overall result
+          if [[ "${{ needs.setup-test-environment.outputs.environment_ready }}" == "true" && \
+                "${{ needs.deploy-cf.outputs.deployment_ready }}" == "true" && \
+                ("${{ needs.run-cats.outputs.cats_passed }}" == "true" || "${{ inputs.skip_cats }}" == "true") && \
+                "${{ needs.check-race-condition.outputs.race_check_passed }}" == "true" ]]; then
+            echo "**Overall Result**: All tests passed - ready for release" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Overall Result**: Tests failed - release blocked" >> $GITHUB_STEP_SUMMARY
+          fi
 
 
 
