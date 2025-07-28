@@ -114,6 +114,11 @@ runs:
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
+        echo "PATH is: $PATH"
+        which terraform
+        terraform version
+        ls -l /usr/local/bin/terraform
+
         # Run BBL up (idempotent)
         bbl up \
           ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
