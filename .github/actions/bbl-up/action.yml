@@ -101,11 +101,12 @@ runs:
         export BBL_GCP_REGION="${{ inputs.gcp_region }}"
         export BBL_IAAS=gcp
 
-        unset http_proxy
-        unset https_proxy
-        unset HTTP_PROXY
-        unset HTTPS_PROXY
-        unset ALL_PROXY
+        # Ensure no proxy environment variables interfere
+        unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+
+        # Set longer timeout for BOSH operations
+        export BOSH_CLIENT_TIMEOUT=600
+        export BOSH_DEPLOYMENT_TIMEOUT=3600
 
         # Optional: set LB cert/key if provided
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
@@ -120,17 +121,43 @@ runs:
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        echo "PATH is: $PATH"
-        which terraform
-        terraform version
-        ls -l /usr/local/bin/terraform
-
-        # Run BBL up (idempotent)
-        bbl up --debug \
-        --terraform-binary /usr/local/bin/terraform \
-        ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-        ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-        ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
+        # Run BBL up with retry logic
+        max_attempts=3
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+          echo "BBL up attempt $attempt of $max_attempts"
+          
+          if bbl up --debug \
+            --terraform-binary /usr/local/bin/terraform \
+            ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
+            ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
+            ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}; then
+            echo "BBL up succeeded on attempt $attempt"
+            break
+          else
+            echo "BBL up failed on attempt $attempt"
+            if [ $attempt -eq $max_attempts ]; then
+              echo "All BBL up attempts failed"
+              exit 1
+            fi
+            
+            # Wait before retry and check if jumpbox is accessible
+            echo "Waiting 60 seconds before retry..."
+            sleep 60
+            
+            # Try to get jumpbox IP and test connectivity
+            if [ -f vars/jumpbox-vars-store.yml ]; then
+              JUMPBOX_IP=$(bbl jumpbox-address 2>/dev/null || echo "")
+              if [[ -n "$JUMPBOX_IP" ]]; then
+                echo "Testing connectivity to jumpbox at $JUMPBOX_IP"
+                timeout 30 nc -z ${JUMPBOX_IP/:*} 22 || echo "Jumpbox not accessible yet"
+              fi
+            fi
+            
+            attempt=$((attempt + 1))
+          fi
+        done
 
         echo "success=true" >> $GITHUB_OUTPUT
 
