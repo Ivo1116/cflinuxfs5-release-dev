@@ -120,7 +120,7 @@ runs:
         ls -l /usr/local/bin/terraform
 
         # Run BBL up (idempotent)
-        bbl up \
+        bbl up --debug\
         --terraform-binary /usr/local/bin/terraform \
         ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
         ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
