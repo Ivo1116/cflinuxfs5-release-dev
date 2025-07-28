@@ -121,9 +121,10 @@ runs:
 
         # Run BBL up (idempotent)
         bbl up \
-          ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-          ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-          ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
+        --terraform-binary /usr/local/bin/terraform \
+        ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
+        ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
+        ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
 
         echo "success=true" >> $GITHUB_OUTPUT
 
