@@ -121,27 +121,37 @@ runs:
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        # Function to test jumpbox connectivity
+        # Function to test jumpbox connectivity after BBL creates it
         test_jumpbox_connectivity() {
-          local jumpbox_ip="$1"
-          local ssh_key="$2"
           local max_attempts=30
           local attempt=1
           
-          echo "Testing jumpbox connectivity to $jumpbox_ip"
+          echo "Testing jumpbox connectivity..."
           
           while [ $attempt -le $max_attempts ]; do
             echo "Connectivity test attempt $attempt of $max_attempts"
             
-            if timeout 10 ssh -i "$ssh_key" \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=10 \
-              -o BatchMode=yes \
-              jumpbox@"$jumpbox_ip" \
-              "echo 'Jumpbox is ready'" 2>/dev/null; then
-              echo "Jumpbox is accessible and ready"
-              return 0
+            # Try to get jumpbox info
+            if JUMPBOX_ADDRESS=$(bbl jumpbox-address 2>/dev/null) && [[ -n "$JUMPBOX_ADDRESS" ]]; then
+              JUMPBOX_IP=$(echo "$JUMPBOX_ADDRESS" | cut -d: -f1)
+              
+              # Test SSH connectivity
+              if bbl ssh-key > /tmp/jumpbox_ssh_key 2>/dev/null; then
+                chmod 600 /tmp/jumpbox_ssh_key
+                
+                if timeout 10 ssh -i /tmp/jumpbox_ssh_key \
+                  -o StrictHostKeyChecking=no \
+                  -o UserKnownHostsFile=/dev/null \
+                  -o ConnectTimeout=10 \
+                  -o BatchMode=yes \
+                  jumpbox@"$JUMPBOX_IP" \
+                  "echo 'Jumpbox is ready'" 2>/dev/null; then
+                  echo "Jumpbox is accessible and ready at $JUMPBOX_IP"
+                  rm -f /tmp/jumpbox_ssh_key
+                  return 0
+                fi
+                rm -f /tmp/jumpbox_ssh_key
+              fi
             fi
             
             echo "Jumpbox not ready yet, waiting..."
@@ -153,28 +163,72 @@ runs:
           return 1
         }
 
-        # Function to prepare jumpbox for SOCKS5 proxy
+        # Function to prepare jumpbox for better SOCKS5 stability
         prepare_jumpbox() {
-          local jumpbox_ip="$1"
-          local ssh_key="$2"
+          echo "Preparing jumpbox for improved stability..."
           
-          echo "Preparing jumpbox for SOCKS5 proxy usage"
+          if ! JUMPBOX_ADDRESS=$(bbl jumpbox-address 2>/dev/null) || [[ -z "$JUMPBOX_ADDRESS" ]]; then
+            echo "Could not get jumpbox address"
+            return 1
+          fi
+          
+          JUMPBOX_IP=$(echo "$JUMPBOX_ADDRESS" | cut -d: -f1)
+          
+          if ! bbl ssh-key > /tmp/jumpbox_ssh_key 2>/dev/null; then
+            echo "Could not get jumpbox SSH key"
+            return 1
+          fi
+          
+          chmod 600 /tmp/jumpbox_ssh_key
           
           # Configure SSH for better stability
-          ssh -i "$ssh_key" \
+          if ssh -i /tmp/jumpbox_ssh_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=30 \
-            jumpbox@"$jumpbox_ip" << 'EOF'
+            jumpbox@"$JUMPBOX_IP" << 'EOF'
         # Update SSH configuration for stability
         sudo sed -i 's/#ClientAliveInterval 0/ClientAliveInterval 60/' /etc/ssh/sshd_config
         sudo sed -i 's/#ClientAliveCountMax 3/ClientAliveCountMax 10/' /etc/ssh/sshd_config
         sudo sed -i 's/#TCPKeepAlive yes/TCPKeepAlive yes/' /etc/ssh/sshd_config
-        sudo systemctl restart ssh
+        
+        # Make sure changes are applied
+        if ! sudo systemctl restart ssh; then
+          sudo service ssh restart
+        fi
 
-        # Ensure good connectivity
-        curl -s --connect-timeout 10 https://s3.amazonaws.com/ > /dev/null || echo "Direct S3 connectivity test failed"
+        # Test connectivity to S3
+        echo "Testing S3 connectivity from jumpbox..."
+        curl -s --connect-timeout 30 --max-time 60 https://s3.amazonaws.com/ > /dev/null && echo "S3 connectivity OK" || echo "S3 connectivity test failed"
+        
+        # Wait a moment for SSH to be fully ready
+        sleep 5
         EOF
+          then
+            echo "Jumpbox preparation completed successfully"
+            rm -f /tmp/jumpbox_ssh_key
+            return 0
+          else
+            echo "Jumpbox preparation failed"
+            rm -f /tmp/jumpbox_ssh_key
+            return 1
+          fi
+        }
+
+        # Function to clean up failed BBL state
+        cleanup_failed_state() {
+          echo "Cleaning up failed BBL state..."
+          
+          # Try to destroy any partially created resources
+          if [ -f bbl-state.json ]; then
+            bbl destroy --no-confirm || echo "BBL destroy failed or nothing to destroy"
+          fi
+          
+          # Clean up local state files
+          rm -f bbl-state.json terraform.tfstate* create-jumpbox.sh create-director.sh
+          rm -rf .terraform/ terraform/ vars/
+          
+          echo "Cleanup completed"
         }
 
         # Run BBL up with enhanced error handling
@@ -184,58 +238,14 @@ runs:
         while [ $attempt -le $max_attempts ]; do
           echo "BBL up attempt $attempt of $max_attempts"
           
-          # First, try to create infrastructure without director
-          if ! bbl up --debug \
-            --terraform-binary /usr/local/bin/terraform \
-            --no-director \
-            ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-            ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-            ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}; then
-            echo "Infrastructure creation failed on attempt $attempt"
-            if [ $attempt -eq $max_attempts ]; then
-              echo "All infrastructure creation attempts failed"
-              exit 1
-            fi
-            attempt=$((attempt + 1))
+          # Clean up any previous failed state
+          if [ $attempt -gt 1 ]; then
+            cleanup_failed_state
+            echo "Waiting 30 seconds before retry..."
             sleep 30
-            continue
           fi
           
-          echo "Infrastructure created successfully, testing jumpbox..."
-          
-          # Get jumpbox details
-          JUMPBOX_IP=$(bbl jumpbox-address | cut -d: -f1)
-          bbl ssh-key > jumpbox_ssh_key
-          chmod 600 jumpbox_ssh_key
-          
-          # Test jumpbox connectivity
-          if ! test_jumpbox_connectivity "$JUMPBOX_IP" "jumpbox_ssh_key"; then
-            echo "Jumpbox connectivity test failed on attempt $attempt"
-            if [ $attempt -eq $max_attempts ]; then
-              echo "All jumpbox connectivity tests failed"
-              exit 1
-            fi
-            attempt=$((attempt + 1))
-            sleep 30
-            continue
-          fi
-          
-          # Prepare jumpbox
-          if ! prepare_jumpbox "$JUMPBOX_IP" "jumpbox_ssh_key"; then
-            echo "Jumpbox preparation failed on attempt $attempt"
-            if [ $attempt -eq $max_attempts ]; then
-              echo "All jumpbox preparation attempts failed"
-              exit 1
-            fi
-            attempt=$((attempt + 1))
-            sleep 30
-            continue
-          fi
-          
-          echo "Jumpbox is ready, creating BOSH director..."
-          sleep 10  # Give jumpbox a moment to settle
-          
-          # Now create the director
+          # Run BBL up
           if bbl up --debug \
             --terraform-binary /usr/local/bin/terraform \
             ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
@@ -244,18 +254,38 @@ runs:
             echo "BBL up succeeded on attempt $attempt"
             break
           else
-            echo "BOSH director creation failed on attempt $attempt"
+            echo "BBL up failed on attempt $attempt"
+            
+            # Check if we have a jumpbox and can test connectivity
+            if bbl jumpbox-address >/dev/null 2>&1; then
+              echo "Jumpbox exists, testing connectivity..."
+              if test_jumpbox_connectivity; then
+                echo "Jumpbox is accessible, preparing for retry..."
+                prepare_jumpbox || echo "Jumpbox preparation failed"
+              else
+                echo "Jumpbox connectivity test failed"
+              fi
+            else
+              echo "No jumpbox found, infrastructure creation may have failed"
+            fi
+            
             if [ $attempt -eq $max_attempts ]; then
-              echo "All BOSH director creation attempts failed"
+              echo "All BBL up attempts failed"
+              cleanup_failed_state
               exit 1
             fi
+            
             attempt=$((attempt + 1))
-            sleep 60
           fi
         done
 
-        # Clean up temporary files
-        rm -f jumpbox_ssh_key
+        # Final connectivity test
+        echo "Performing final connectivity test..."
+        if test_jumpbox_connectivity; then
+          echo "Final jumpbox connectivity test passed"
+        else
+          echo "Warning: Final jumpbox connectivity test failed, but BBL up succeeded"
+        fi
 
         echo "success=true" >> $GITHUB_OUTPUT
 
