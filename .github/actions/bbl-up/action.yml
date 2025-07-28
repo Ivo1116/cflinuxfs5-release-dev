@@ -113,11 +113,6 @@ runs:
 
         # Run BBL up (idempotent)
         bbl up \
-          --iaas gcp \
-          --gcp-service-account-key "$BBL_GCP_SERVICE_ACCOUNT_KEY" \
-          --gcp-project-id "$BBL_GCP_PROJECT_ID" \
-          --gcp-zone "$BBL_GCP_ZONE" \
-          --gcp-region "$BBL_GCP_REGION" \
           ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
           ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
           ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
