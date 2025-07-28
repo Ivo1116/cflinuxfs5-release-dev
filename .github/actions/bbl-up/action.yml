@@ -72,19 +72,75 @@ runs:
         unzip /tmp/terraform.zip -d /tmp/
         sudo mv /tmp/terraform /usr/local/bin/terraform
         sudo chmod +x /usr/local/bin/terraform
-        export PATH=$PATH:/usr/local/bin
-        terraform version
 
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    - name: Create custom BOSH director ops file
+    - name: Create BOSH director ops files
       shell: bash
       run: |
         mkdir -p bbl-state/${{ inputs.env_name }}/ops
-        cat > bbl-state/${{ inputs.env_name }}/ops/director-optimization.yml << 'EOF'
-        # Use alternative release source to avoid S3 download through jumpbox
+        
+        # Direct download ops file (avoids SOCKS5 proxy issues)
+        cat > bbl-state/${{ inputs.env_name }}/ops/director-direct-download.yml << 'EOF'
+        - type: replace
+          path: /releases/name=bosh?
+          value:
+            name: bosh
+            version: "282.0.4"
+            url: file:///tmp/bosh-282.0.4.tgz
+            sha1: 20c8f5c7b16ab89c4b9a91748e3ad0b0e6c0cbf9
+
+        - type: replace
+          path: /instance_groups/name=bosh/jobs/name=bosh/properties/director/pre_start_script?
+          value: |
+            #!/bin/bash
+            set -euo pipefail
+            echo "Pre-downloading BOSH release..."
+            if [ ! -f /tmp/bosh-282.0.4.tgz ]; then
+              for attempt in 1 2 3; do
+                echo "Download attempt $attempt/3"
+                if curl -L --connect-timeout 30 --max-time 300 --retry 3 \
+                   -o /tmp/bosh-282.0.4.tgz \
+                   https://github.com/cloudfoundry/bosh/releases/download/v282.0.4/bosh-282.0.4.tgz; then
+                  echo "Successfully downloaded BOSH release"
+                  break
+                else
+                  echo "Download attempt $attempt failed"
+                  if [ $attempt -eq 3 ]; then
+                    echo "All download attempts failed"
+                    exit 1
+                  fi
+                  sleep 30
+                fi
+              done
+              
+              echo "Verifying download..."
+              if echo "20c8f5c7b16ab89c4b9a91748e3ad0b0e6c0cbf9  /tmp/bosh-282.0.4.tgz" | sha1sum -c; then
+                echo "BOSH release verification successful"
+              else
+                echo "SHA1 verification failed"
+                rm -f /tmp/bosh-282.0.4.tgz
+                exit 1
+              fi
+            fi
+
+        - type: replace
+          path: /instance_groups/name=bosh/properties/director/timeout?
+          value: 1800
+
+        - type: replace
+          path: /instance_groups/name=bosh/properties/director/max_threads?
+          value: 4
+
+        - type: replace
+          path: /instance_groups/name=bosh/properties/director/log_level?
+          value: debug
+        EOF
+
+        # Fallback ops file (SOCKS5 with extended timeouts)
+        cat > bbl-state/${{ inputs.env_name }}/ops/director-fallback.yml << 'EOF'
         - type: replace
           path: /releases/name=bosh?
           value:
@@ -93,25 +149,24 @@ runs:
             url: https://github.com/cloudfoundry/bosh/releases/download/v282.0.4/bosh-282.0.4.tgz
             sha1: 20c8f5c7b16ab89c4b9a91748e3ad0b0e6c0cbf9
 
-        # Increase timeouts for better stability
         - type: replace
           path: /instance_groups/name=bosh/properties/director/timeout?
-          value: 1800
+          value: 3600
 
-        # Reduce threading to avoid overwhelming connections
         - type: replace
           path: /instance_groups/name=bosh/properties/director/max_threads?
-          value: 4
+          value: 2
 
-        # Enable better logging
         - type: replace
           path: /instance_groups/name=bosh/properties/director/log_level?
           value: debug
 
-        # Optimize for network stability
         - type: replace
-          path: /instance_groups/name=bosh/properties/director/keep_unreachable_vms?
-          value: true
+          path: /instance_groups/name=bosh/properties/director/connection_options?
+          value:
+            timeout: 600
+            ssh_timeout: 120
+            socks5_timeout: 600
         EOF
 
     - name: Run BBL Up
@@ -127,23 +182,22 @@ runs:
         mkdir -p bbl-state/${{ inputs.env_name }}
         cd bbl-state/${{ inputs.env_name }}
 
-        # Write GCP service account key to file
+        # Setup GCP credentials
         echo "${GCP_SERVICE_ACCOUNT_KEY}" > gcp-key.json
-
         export BBL_GCP_SERVICE_ACCOUNT_KEY="$(pwd)/gcp-key.json"
         export BBL_GCP_PROJECT_ID="${{ inputs.gcp_project_id }}"
         export BBL_GCP_ZONE="${{ inputs.gcp_zone }}"
         export BBL_GCP_REGION="${{ inputs.gcp_region }}"
         export BBL_IAAS=gcp
 
-        # Ensure no proxy environment variables interfere
+        # Clean proxy environment
         unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 
-        # Set longer timeout for BOSH operations
+        # Set timeouts
         export BOSH_CLIENT_TIMEOUT=600
         export BOSH_DEPLOYMENT_TIMEOUT=3600
 
-        # Optional: set LB cert/key if provided
+        # Setup LB cert/key if provided
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
           echo "${CFLINUXFS5_LB_CERT}" > lb-cert.pem
           echo "${CFLINUXFS5_LB_KEY}" > lb-key.pem
@@ -151,43 +205,34 @@ runs:
           export BBL_LB_KEY="$(pwd)/lb-key.pem"
         fi
 
-        # Optional: set LB domain if provided
+        # Setup LB domain if provided
         if [[ -n "${{ inputs.lb_domain }}" ]]; then
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        # Function to test jumpbox readiness thoroughly
-        test_jumpbox_readiness() {
-          local max_attempts=60
+        # Test jumpbox readiness
+        test_jumpbox_ready() {
+          local max_attempts=30
           local attempt=1
           
-          echo "Testing jumpbox readiness..."
-          
           while [ $attempt -le $max_attempts ]; do
-            echo "Readiness test attempt $attempt of $max_attempts"
+            echo "Testing jumpbox readiness (attempt $attempt/$max_attempts)..."
             
-            # Check if BBL can get jumpbox info
             if JUMPBOX_ADDRESS=$(bbl jumpbox-address 2>/dev/null) && [[ -n "$JUMPBOX_ADDRESS" ]]; then
               JUMPBOX_IP=$(echo "$JUMPBOX_ADDRESS" | cut -d: -f1)
-              echo "Jumpbox IP: $JUMPBOX_IP"
               
-              # Test basic TCP connectivity
-              if timeout 5 nc -z "$JUMPBOX_IP" 22; then
-                echo "Port 22 is open"
-                
-                # Test SSH authentication
+              if timeout 20 nc -z "$JUMPBOX_IP" 22 2>/dev/null; then
                 if bbl ssh-key > /tmp/jumpbox_ssh_key 2>/dev/null; then
                   chmod 600 /tmp/jumpbox_ssh_key
                   
-                  # Test SSH connection and internet connectivity
-                  if timeout 15 ssh -i /tmp/jumpbox_ssh_key \
+                  if timeout 30 ssh -i /tmp/jumpbox_ssh_key \
                     -o StrictHostKeyChecking=no \
                     -o UserKnownHostsFile=/dev/null \
-                    -o ConnectTimeout=10 \
+                    -o ConnectTimeout=15 \
                     -o BatchMode=yes \
                     jumpbox@"$JUMPBOX_IP" \
-                    'echo "SSH OK" && curl -s --connect-timeout 10 --max-time 20 https://s3.amazonaws.com/ >/dev/null && echo "Internet OK"' 2>/dev/null; then
-                    echo "Jumpbox is fully ready with internet connectivity"
+                    'echo "Ready" && curl -s --connect-timeout 10 --max-time 20 https://github.com/ >/dev/null' 2>/dev/null; then
+                    echo "Jumpbox is ready"
                     rm -f /tmp/jumpbox_ssh_key
                     return 0
                   fi
@@ -196,184 +241,75 @@ runs:
               fi
             fi
             
-            echo "Jumpbox not ready yet, waiting 10 seconds..."
             sleep 10
             attempt=$((attempt + 1))
           done
           
-          echo "Jumpbox readiness test failed after $max_attempts attempts"
+          echo "Jumpbox readiness test failed"
           return 1
         }
 
-        # Function to optimize jumpbox for SOCKS5
-        optimize_jumpbox() {
-          echo "Optimizing jumpbox for SOCKS5 proxy..."
-          
-          JUMPBOX_ADDRESS=$(bbl jumpbox-address)
-          JUMPBOX_IP=$(echo "$JUMPBOX_ADDRESS" | cut -d: -f1)
-          bbl ssh-key > /tmp/jumpbox_ssh_key
-          chmod 600 /tmp/jumpbox_ssh_key
-          
-          # Configure jumpbox for optimal SOCKS5 performance
-          ssh -i /tmp/jumpbox_ssh_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ConnectTimeout=30 \
-            jumpbox@"$JUMPBOX_IP" << 'EOF'
-        # Optimize SSH daemon for SOCKS5 proxy
-        sudo tee -a /etc/ssh/sshd_config << SSHEOF
-        # Optimize for SOCKS5 proxy usage
-        ClientAliveInterval 30
-        ClientAliveCountMax 6
-        TCPKeepAlive yes
-        GatewayPorts yes
-        AllowTcpForwarding yes
-        MaxSessions 100
-        MaxStartups 100:30:200
-        SSHEOF
-        
-        # Restart SSH service
-        sudo systemctl restart ssh
-        
-        # Pre-warm DNS resolution for S3 and GitHub
-        echo "Pre-warming DNS resolution..."
-        nslookup s3.amazonaws.com || true
-        nslookup github.com || true
-        nslookup api.github.com || true
-        
-        # Test connectivity with various methods
-        echo "Testing connectivity..."
-        curl -v --connect-timeout 30 --max-time 60 https://s3.amazonaws.com/ || echo "S3 curl failed"
-        curl -v --connect-timeout 30 --max-time 60 https://github.com/ || echo "GitHub curl failed"
-        wget --timeout=30 -O /dev/null https://s3.amazonaws.com/ || echo "S3 wget failed"
-        
-        # Test the specific BOSH release URL
-        echo "Testing BOSH release download..."
-        curl -I --connect-timeout 30 --max-time 60 https://github.com/cloudfoundry/bosh/releases/download/v282.0.4/bosh-282.0.4.tgz || echo "BOSH release test failed"
-        
-        echo "Jumpbox optimization completed"
-        EOF
-          
-          rm -f /tmp/jumpbox_ssh_key
-          echo "Jumpbox optimization completed"
-        }
-
-        # Common BBL up function with ops file
+        # BBL up function
         run_bbl_up() {
-          local use_ops_file="${1:-true}"
+          local ops_file="$1"
+          echo "Running BBL up with ops file: $ops_file"
           
-          if [[ "$use_ops_file" == "true" && -f ops/director-optimization.yml ]]; then
-            echo "Running BBL up with director optimization ops file..."
-            bbl up --debug \
-              --ops-file ops/director-optimization.yml \
-              --terraform-binary /usr/local/bin/terraform \
-              ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-              ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-              ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
-          else
-            echo "Running BBL up without ops file..."
-            bbl up --debug \
-              --terraform-binary /usr/local/bin/terraform \
-              ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-              ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-              ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
-          fi
+          bbl up --debug \
+            --ops-file "ops/$ops_file" \
+            --terraform-binary /usr/local/bin/terraform \
+            ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
+            ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
+            ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
         }
 
-        # Check if BBL state already exists and infrastructure is up
-        if [ -f bbl-state.json ]; then
-          echo "BBL state exists, checking status..."
-          
-          # Check if infrastructure exists
-          if bbl jumpbox-address >/dev/null 2>&1; then
-            echo "Infrastructure already exists, testing jumpbox..."
-            if test_jumpbox_readiness; then
-              echo "Jumpbox is ready, optimizing and attempting director creation only..."
-              optimize_jumpbox
-              
-              # Try to create just the director with ops file first
-              if run_bbl_up true; then
-                echo "Director creation succeeded with ops file"
-                echo "success=true" >> $GITHUB_OUTPUT
-                exit 0
-              else
-                echo "Director creation with ops file failed, trying without ops file..."
-                if run_bbl_up false; then
-                  echo "Director creation succeeded without ops file"
-                  echo "success=true" >> $GITHUB_OUTPUT
-                  exit 0
-                else
-                  echo "Director creation failed, will try full BBL up"
-                fi
-              fi
+        # Check if infrastructure already exists
+        if [ -f bbl-state.json ] && bbl jumpbox-address >/dev/null 2>&1; then
+          echo "Infrastructure exists, checking jumpbox and attempting director creation..."
+          if test_jumpbox_ready; then
+            # Try direct download first
+            if run_bbl_up "director-direct-download.yml"; then
+              echo "Director creation succeeded with direct download"
+              echo "success=true" >> $GITHUB_OUTPUT
+              exit 0
+            elif run_bbl_up "director-fallback.yml"; then
+              echo "Director creation succeeded with fallback"
+              echo "success=true" >> $GITHUB_OUTPUT
+              exit 0
             fi
           fi
         fi
 
-        # Full BBL up with retry logic (but no resource recreation)
-        max_attempts=3
-        attempt=1
-        
-        while [ $attempt -le $max_attempts ]; do
-          echo "BBL up attempt $attempt of $max_attempts"
+        # Full BBL up with retry
+        for attempt in 1 2 3; do
+          echo "BBL up attempt $attempt/3"
           
-          # First try with ops file, then without
-          success=false
-          
-          echo "Attempting BBL up with optimization ops file..."
-          if run_bbl_up true; then
-            echo "BBL up with ops file succeeded on attempt $attempt"
-            success=true
-          else
-            echo "BBL up with ops file failed, trying without ops file..."
-            if run_bbl_up false; then
-              echo "BBL up without ops file succeeded on attempt $attempt"
-              success=true
-            fi
+          # Try direct download approach first
+          if run_bbl_up "director-direct-download.yml"; then
+            echo "BBL up succeeded with direct download on attempt $attempt"
+            echo "success=true" >> $GITHUB_OUTPUT
+            exit 0
           fi
           
-          if [[ "$success" == "true" ]]; then
-            break
-          else
-            echo "BBL up failed on attempt $attempt"
-            
-            # If jumpbox exists, test and optimize it
+          # Try fallback approach
+          if run_bbl_up "director-fallback.yml"; then
+            echo "BBL up succeeded with fallback on attempt $attempt"
+            echo "success=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "Attempt $attempt failed"
+          if [ $attempt -lt 3 ]; then
+            echo "Waiting 60 seconds before retry..."
+            # Test jumpbox if it exists
             if bbl jumpbox-address >/dev/null 2>&1; then
-              echo "Jumpbox exists, testing readiness..."
-              if test_jumpbox_readiness; then
-                echo "Jumpbox is ready, optimizing for next attempt..."
-                optimize_jumpbox
-                sleep 30  # Give jumpbox time to settle after optimization
-              else
-                echo "Jumpbox readiness test failed"
-              fi
-            else
-              echo "No jumpbox found after BBL up failure"
+              test_jumpbox_ready || true
             fi
-            
-            if [ $attempt -eq $max_attempts ]; then
-              echo "All BBL up attempts failed"
-              exit 1
-            fi
-            
-            echo "Waiting 60 seconds before retry (without destroying infrastructure)..."
             sleep 60
-            attempt=$((attempt + 1))
           fi
         done
 
-        # Final verification
-        echo "Performing final verification..."
-        if bbl jumpbox-address >/dev/null 2>&1; then
-          echo "Jumpbox is accessible"
-          if test_jumpbox_readiness; then
-            echo "Final jumpbox connectivity test passed"
-          else
-            echo "Warning: Final jumpbox connectivity test failed, but BBL up succeeded"
-          fi
-        fi
-
-        echo "success=true" >> $GITHUB_OUTPUT
+        echo "All BBL up attempts failed"
+        exit 1
 
     - name: Commit and push BBL state
       shell: bash
