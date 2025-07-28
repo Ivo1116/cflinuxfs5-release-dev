@@ -79,15 +79,6 @@ runs:
         chmod +x /tmp/bosh
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    - name: Unset proxy variables
-      shell: bash
-      run: |
-        unset http_proxy
-        unset https_proxy
-        unset HTTP_PROXY
-        unset HTTPS_PROXY
-        unset ALL_PROXY
-
     - name: Run BBL Up
       id: bbl-up
       shell: bash
@@ -109,6 +100,12 @@ runs:
         export BBL_GCP_ZONE="${{ inputs.gcp_zone }}"
         export BBL_GCP_REGION="${{ inputs.gcp_region }}"
         export BBL_IAAS=gcp
+
+        unset http_proxy
+        unset https_proxy
+        unset HTTP_PROXY
+        unset HTTPS_PROXY
+        unset ALL_PROXY
 
         # Optional: set LB cert/key if provided
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
