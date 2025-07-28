@@ -79,6 +79,15 @@ runs:
         chmod +x /tmp/bosh
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
+    - name: Unset proxy variables
+      shell: bash
+      run: |
+        unset http_proxy
+        unset https_proxy
+        unset HTTP_PROXY
+        unset HTTPS_PROXY
+        unset ALL_PROXY
+
     - name: Run BBL Up
       id: bbl-up
       shell: bash
