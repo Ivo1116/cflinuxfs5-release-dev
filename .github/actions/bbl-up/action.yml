@@ -27,6 +27,13 @@ inputs:
     description: 'Load balancer domain'
     required: false
     default: ''
+  bbl_state_repo:
+    description: 'Repo for BBL state (owner/repo)'
+    required: true
+  bbl_state_branch:
+    description: 'Branch for BBL state'
+    required: false
+    default: 'main'
 
 runs:
   using: 'composite'
@@ -48,11 +55,10 @@ runs:
     - name: Checkout BBL state repo
       uses: actions/checkout@v4
       with:
-        repository: ivo1116/buildpacks-envs
-        ref: main
+        repository: ${{ inputs.bbl_state_repo }}
+        ref: ${{ inputs.bbl_state_branch }}
         path: bbl-state
-        ssh-key: CFLINUXFS5_TOKEN
-
+        ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
     - name: Install BBL, Terraform, BOSH CLI
       shell: bash
@@ -80,7 +86,8 @@ runs:
       run: |
         set -euo pipefail
 
-        cd bbl-state/${{ inputs.env_name }} || mkdir -p bbl-state/${{ inputs.env_name }} && cd bbl-state/${{ inputs.env_name }}
+        mkdir -p bbl-state/${{ inputs.env_name }}
+        cd bbl-state/${{ inputs.env_name }}
 
         # Write GCP service account key to file
         echo "${GCP_SERVICE_ACCOUNT_KEY}" > gcp-key.json

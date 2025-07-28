@@ -52,9 +52,13 @@ jobs:
         with:
           stack: cflinuxfs5
           version: ${{ steps.get-version.outputs.version }}
+          env_name: cflinuxfs5-test
+          gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          bbl_state_repo: ivo1116/buildpacls-envs
+          bbl_state_branch: main
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+          BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
           CFLINUXFS5_LB_CERT: ${{ secrets.CFLINUXFS5_LB_CERT }}
           CFLINUXFS5_LB_KEY: ${{ secrets.CFLINUXFS5_LB_KEY }}
 
