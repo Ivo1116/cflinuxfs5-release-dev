@@ -64,7 +64,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        wget -O /tmp/bbl https://github.com/cloudfoundry/bosh-bootloader/releases/download/v8.4.110/bbl-v8.4.110_linux_x86-64
+        wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
         chmod +x /tmp/bbl
         sudo mv /tmp/bbl /usr/local/bin/bbl
 
@@ -112,7 +112,7 @@ runs:
         fi
 
         # Run BBL up (idempotent)
-        bbl up \
+        bbl up --debug \
           ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
           ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
           ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
