@@ -86,6 +86,8 @@ runs:
       run: |
         set -euo pipefail
 
+        export PATH="/usr/local/bin:$PATH"
+
         mkdir -p bbl-state/${{ inputs.env_name }}
         cd bbl-state/${{ inputs.env_name }}
 
