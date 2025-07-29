@@ -64,14 +64,13 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
+        wget -O /tmp/bbl https://github.com/cloudfoundry/bosh-bootloader/releases/download/v8.4.110/bbl-v8.4.110_linux_x86-64
         chmod +x /tmp/bbl
         sudo mv /tmp/bbl /usr/local/bin/bbl
 
         wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
         unzip /tmp/terraform.zip -d /tmp/
         sudo mv /tmp/terraform /usr/local/bin/terraform
-        sudo chmod +x /usr/local/bin/terraform
 
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh
@@ -90,15 +89,16 @@ runs:
         mkdir -p bbl-state/${{ inputs.env_name }}
         cd bbl-state/${{ inputs.env_name }}
 
-        # Setup GCP credentials and environment
+        # Write GCP service account key to file
         echo "${GCP_SERVICE_ACCOUNT_KEY}" > gcp-key.json
+
         export BBL_GCP_SERVICE_ACCOUNT_KEY="$(pwd)/gcp-key.json"
         export BBL_GCP_PROJECT_ID="${{ inputs.gcp_project_id }}"
         export BBL_GCP_ZONE="${{ inputs.gcp_zone }}"
         export BBL_GCP_REGION="${{ inputs.gcp_region }}"
         export BBL_IAAS=gcp
 
-        # Setup LB cert/key if provided
+        # Optional: set LB cert/key if provided
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
           echo "${CFLINUXFS5_LB_CERT}" > lb-cert.pem
           echo "${CFLINUXFS5_LB_KEY}" > lb-key.pem
@@ -106,14 +106,13 @@ runs:
           export BBL_LB_KEY="$(pwd)/lb-key.pem"
         fi
 
-        # Setup LB domain if provided
+        # Optional: set LB domain if provided
         if [[ -n "${{ inputs.lb_domain }}" ]]; then
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        # Run BBL up
-        echo "Running BBL up..."
-        bbl up --debug --terraform-binary /usr/local/bin/terraform \
+        # Run BBL up (idempotent)
+        bbl up \
           ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
           ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
           ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
