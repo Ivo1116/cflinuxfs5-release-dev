@@ -66,6 +66,9 @@ runs:
         wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
         unzip /tmp/terraform.zip -d /tmp/
         sudo mv /tmp/terraform /usr/local/bin/terraform
+        sudo chmod +x /usr/local/bin/terraform
+        export PATH=$PATH:/usr/local/bin
+        terraform version
 
         set -euo pipefail
         wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
