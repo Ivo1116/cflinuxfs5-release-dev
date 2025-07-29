@@ -63,14 +63,14 @@ runs:
     - name: Install BBL, Terraform, BOSH CLI
       shell: bash
       run: |
+        wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
+        unzip /tmp/terraform.zip -d /tmp/
+        sudo mv /tmp/terraform /usr/local/bin/terraform
+
         set -euo pipefail
         wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
         chmod +x /tmp/bbl
         sudo mv /tmp/bbl /usr/local/bin/bbl
-
-        wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
-        unzip /tmp/terraform.zip -d /tmp/
-        sudo mv /tmp/terraform /usr/local/bin/terraform
 
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh
