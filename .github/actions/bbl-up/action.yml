@@ -34,6 +34,10 @@ inputs:
     description: 'Branch for BBL state'
     required: false
     default: 'main'
+outputs:
+  success:
+    description: "Whether the environment was set up successfully"
+    value: ${{ steps.bbl-up.outputs.success }}
 
 runs:
   using: 'composite'
