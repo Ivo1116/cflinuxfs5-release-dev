@@ -74,9 +74,6 @@ runs:
       run: |
         wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
-    - name: Checkout buildpack releases
-      uses: ./.github/actions/checkout-buildpack-releases
-
     - name: Create deployment source config
       shell: bash
       run: |
@@ -84,7 +81,6 @@ runs:
         
         export ENV_NAME='${{ inputs.env_name }}'
         
-        # Run equivalent of create-deployment-source-config task
         mkdir -p ../deployment-source-config
         
         cd ../bbl-state/${{ inputs.env_name }}
@@ -97,15 +93,11 @@ runs:
         
         export STACK='${{ inputs.stack }}'
         
-        # Run equivalent of overwrite-rootfs-release task
-        # This modifies the rootfs release with the new version
         mkdir -p ../rootfs-release-artifacts
         
         cd ../cflinuxfs5-release
         
-        # Download the built rootfs from artifacts
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
-          # Update the release with new rootfs
           bosh create-release --force --tarball=../rootfs-release-artifacts/cflinuxfs5-dev.tgz
         fi
 
@@ -116,7 +108,6 @@ runs:
         
         export STACK='${{ inputs.stack }}'
         
-        # Run equivalent of create-capi-release-with-rootfs task
         mkdir -p ../capi-release-artifacts
         
         cd ../capi-release
