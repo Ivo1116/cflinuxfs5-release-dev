@@ -129,6 +129,13 @@ runs:
         cd bbl-state
         git config user.name "CF Buildpacks Eng Bot"
         git config user.email "tanzu-buildpacks.pdl@broadcom.com"
+        
+        # Add gitignore rules for sensitive files
+        echo "*/gcp-key.json" >> .gitignore
+        echo "*/service-account-key.json" >> .gitignore
+        echo "*/*-key.json" >> .gitignore
+        echo "*/vars/*-vars-store.yml" >> .gitignore  # These often contain secrets
+        
         if [[ -n "$(git status --porcelain)" ]]; then
           git add -A
           git commit -m "Update BBL state for ${{ inputs.env_name }}"
