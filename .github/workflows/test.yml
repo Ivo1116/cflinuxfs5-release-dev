@@ -103,6 +103,8 @@ jobs:
         with:
           stack: cflinuxfs5
           version: ${{ inputs.skip_setup == true && needs.get-version.outputs.version || needs.setup-test-environment.outputs.version }}
+          bbl_state_repo: ivo1116/buildpacks-envs
+          bbl_state_branch: main
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
           BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
