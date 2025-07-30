@@ -72,8 +72,7 @@ runs:
     - name: Get GCP stemcell
       shell: bash
       run: |
-        # Download latest stemcell
-        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-jammy-go_agent?v=latest"
+        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
     - name: Checkout buildpack releases
       uses: ./.github/actions/checkout-buildpack-releases
