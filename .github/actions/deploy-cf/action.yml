@@ -77,16 +77,11 @@ runs:
     - name: Create deployment source config
       shell: bash
       run: |
-        cd buildpacks-ci
+        cd buildpacks-envs
 
-        ls
-        
-        export ENV_NAME='${{ inputs.env_name }}'
-        
-        mkdir -p ../deployment-source-config
-        
-        cd ${{ inputs.env_name }}
-        bbl print-env > ../../deployment-source-config/source_file.yml
+        mkdir ../deployment-source-config
+
+        bbl print-env > ../deployment-source-config/source_file.yml
 
     - name: Overwrite rootfs release
       shell: bash
