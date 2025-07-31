@@ -77,7 +77,7 @@ runs:
     - name: Create deployment source config
       shell: bash
       run: |
-        cd buildpacks-envs
+        cd bbl-state
 
         mkdir ../deployment-source-config
 
