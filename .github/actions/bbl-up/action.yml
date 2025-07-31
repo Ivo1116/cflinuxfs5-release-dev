@@ -18,11 +18,11 @@ inputs:
   gcp_zone:
     description: 'GCP Zone'
     required: false
-    default: 'us-east1-c'
+    default: 'us-central1-a'
   gcp_region:
     description: 'GCP Region'
     required: false
-    default: 'us-east1'
+    default: 'us-central1'
   lb_domain:
     description: 'Load balancer domain'
     required: false
