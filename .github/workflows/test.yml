@@ -74,8 +74,9 @@ jobs:
 
   deploy-cf:
     name: Deploy CF with New Rootfs
-    needs: [get-version]
+    needs: [setup-test-environment, get-version]
     runs-on: ubuntu-latest
+    if: always() && (inputs.skip_setup == true || needs.setup-test-environment.result == 'success')
     outputs:
       deployment_ready: ${{ steps.deploy.outputs.success }}
       version: ${{ needs.get-version.outputs.version }}
@@ -88,7 +89,7 @@ jobs:
         uses: ./.github/actions/deploy-cf
         with:
           stack: cflinuxfs5
-          env_name: cflinuxfs5test
+          env_name: cflinuxfs5
           version: ${{ needs.get-version.outputs.version }}
           bbl_state_repo: ivo1116/buildpacks-envs
           bbl_state_branch: main
@@ -144,7 +145,7 @@ jobs:
 
   cleanup-deployments:
     name: Cleanup CF Deployments
-    needs: [deploy-cf, run-cats, check-race-condition]
+    needs: [setup-test-environment, deploy-cf, run-cats, check-race-condition]
     runs-on: ubuntu-latest
     if: |
       always() && 
