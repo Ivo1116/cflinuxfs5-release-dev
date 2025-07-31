@@ -78,12 +78,14 @@ runs:
       shell: bash
       run: |
         cd buildpacks-ci
+
+        ls
         
         export ENV_NAME='${{ inputs.env_name }}'
         
         mkdir -p ../deployment-source-config
         
-        cd ../${{ inputs.env_name }}
+        cd ${{ inputs.env_name }}
         bbl print-env > ../../deployment-source-config/source_file.yml
 
     - name: Overwrite rootfs release
