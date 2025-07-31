@@ -83,7 +83,7 @@ runs:
         
         mkdir -p ../deployment-source-config
         
-        cd ../bbl-state/${{ inputs.env_name }}
+        cd ../${{ inputs.env_name }}
         bbl print-env > ../../deployment-source-config/source_file.yml
 
     - name: Overwrite rootfs release
