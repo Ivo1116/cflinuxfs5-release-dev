@@ -74,6 +74,14 @@ runs:
       run: |
         wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
+    - name: Install BBL
+      shell: bash
+      run: |
+        set -euo pipefail
+        wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
+        chmod +x /tmp/bbl
+        sudo mv /tmp/bbl /usr/local/bin/bbl
+
     - name: Create deployment source config
       shell: bash
       run: |
