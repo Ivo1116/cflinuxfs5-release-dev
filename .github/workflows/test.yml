@@ -60,7 +60,7 @@ jobs:
         with:
           stack: cflinuxfs5
           version: ${{ steps.get-version.outputs.version }}
-          env_name: cflinuxfs5-test
+          env_name: cflinuxfs5
           gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
           bbl_state_repo: ivo1116/buildpacks-envs
           bbl_state_branch: main
