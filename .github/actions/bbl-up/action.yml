@@ -100,7 +100,6 @@ runs:
         export BBL_GCP_REGION="${{ inputs.gcp_region }}"
         export BBL_IAAS=gcp
 
-        # Optional: set LB cert/key if provided
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
           echo "${CFLINUXFS5_LB_CERT}" > lb-cert.pem
           echo "${CFLINUXFS5_LB_KEY}" > lb-key.pem
@@ -108,12 +107,10 @@ runs:
           export BBL_LB_KEY="$(pwd)/lb-key.pem"
         fi
 
-        # Optional: set LB domain if provided
         if [[ -n "${{ inputs.lb_domain }}" ]]; then
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        # Run BBL up (idempotent)
         bbl up --debug \
         --terraform-binary /usr/local/bin/terraform \
         ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
@@ -130,11 +127,14 @@ runs:
         git config user.name "CF Buildpacks Eng Bot"
         git config user.email "tanzu-buildpacks.pdl@broadcom.com"
         
-        # Add gitignore rules for sensitive files
         echo "*/gcp-key.json" >> .gitignore
         echo "*/service-account-key.json" >> .gitignore
         echo "*/*-key.json" >> .gitignore
-        echo "*/vars/*-vars-store.yml" >> .gitignore  # These often contain secrets
+        echo "*/*.key" >> .gitignore
+        echo "*/*.pem" >> .gitignore
+        echo "*/private_key" >> .gitignore
+        echo "*/id_rsa*" >> .gitignore
+        
         
         if [[ -n "$(git status --porcelain)" ]]; then
           git add -A
