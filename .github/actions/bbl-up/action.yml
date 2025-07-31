@@ -88,8 +88,23 @@ runs:
     - name: Set up GCP credentials
       shell: bash
       run: |
-        # Set up gcloud CLI for additional operations
-        echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 -d > /tmp/gcp-key.json
+        set -euo pipefail
+        
+        # Handle GCP service account key - it might be base64 encoded or plain JSON
+        if echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | jq empty 2>/dev/null; then
+          # It's already valid JSON
+          echo '${{ env.GCP_SERVICE_ACCOUNT_KEY }}' > /tmp/gcp-key.json
+        else
+          # Try to decode as base64
+          if echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 -d | jq empty 2>/dev/null; then
+            echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 -d > /tmp/gcp-key.json
+          else
+            echo "Error: GCP_SERVICE_ACCOUNT_KEY is neither valid JSON nor valid base64-encoded JSON"
+            exit 1
+          fi
+        fi
+        
+        # Set up gcloud CLI
         gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
         gcloud config set project ${{ inputs.gcp_project_id }}
 
