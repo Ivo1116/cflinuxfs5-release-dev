@@ -102,6 +102,7 @@ jobs:
         uses: ./.github/actions/deploy-cf
         with:
           stack: cflinuxfs5
+          env_name: cflinuxfs5test
           version: ${{ inputs.skip_setup == true && needs.get-version.outputs.version || needs.setup-test-environment.outputs.version }}
           bbl_state_repo: ivo1116/buildpacks-envs
           bbl_state_branch: main
