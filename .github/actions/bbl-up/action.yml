@@ -34,6 +34,15 @@ inputs:
     description: 'Branch for BBL state'
     required: false
     default: 'main'
+  max_retries:
+    description: 'Maximum number of retries for BBL up'
+    required: false
+    default: '3'
+
+outputs:
+  success:
+    description: 'Whether BBL up succeeded'
+    value: ${{ steps.bbl-up.outputs.success }}
 
 runs:
   using: 'composite'
@@ -76,7 +85,37 @@ runs:
         chmod +x /tmp/bosh
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    - name: Run BBL Up
+    - name: Set up GCP credentials
+      shell: bash
+      run: |
+        # Set up gcloud CLI for additional operations
+        echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 -d > /tmp/gcp-key.json
+        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+        gcloud config set project ${{ inputs.gcp_project_id }}
+
+    - name: Clean up any existing failed resources
+      shell: bash
+      run: |
+        set +e  # Don't fail if resources don't exist
+        
+        # Clean up any existing resources that might cause conflicts
+        ENV_PREFIX="vm-"
+        INSTANCES=$(gcloud compute instances list --filter="name~'${ENV_PREFIX}.*jumpbox'" --format="value(name,zone)" 2>/dev/null || true)
+        
+        if [[ -n "$INSTANCES" ]]; then
+          echo "Found existing jumpbox instances, cleaning up..."
+          while IFS=$'\t' read -r name zone; do
+            if [[ -n "$name" && -n "$zone" ]]; then
+              echo "Deleting instance: $name in zone: $zone"
+              gcloud compute instances delete "$name" --zone="$zone" --quiet || true
+            fi
+          done <<< "$INSTANCES"
+          
+          # Wait a bit for cleanup to complete
+          sleep 30
+        fi
+
+    - name: Run BBL Up with retry logic
       id: bbl-up
       shell: bash
       env:
@@ -111,13 +150,72 @@ runs:
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        bbl up --debug \
-        --terraform-binary /usr/local/bin/terraform \
-        ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-        ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-        ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
+        # Retry logic for BBL up
+        max_retries=${{ inputs.max_retries }}
+        retry_count=0
+        success=false
+
+        while [[ $retry_count -lt $max_retries ]]; do
+          echo "BBL up attempt $((retry_count + 1)) of $max_retries"
+          
+          if bbl up --debug \
+            --terraform-binary /usr/local/bin/terraform \
+            ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
+            ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
+            ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}; then
+            success=true
+            break
+          else
+            retry_count=$((retry_count + 1))
+            if [[ $retry_count -lt $max_retries ]]; then
+              echo "BBL up failed, cleaning up and retrying in 60 seconds..."
+              
+              # Clean up failed deployment
+              bbl destroy --no-confirm --debug || echo "Destroy failed or nothing to destroy"
+              
+              # Wait before retry
+              sleep 60
+            else
+              echo "All BBL up attempts failed"
+            fi
+          fi
+        done
+
+        if [[ "$success" = "true" ]]; then
+          echo "success=true" >> $GITHUB_OUTPUT
+          echo "BBL up completed successfully"
+        else
+          echo "success=false" >> $GITHUB_OUTPUT
+          echo "BBL up failed after $max_retries attempts"
+          exit 1
+        fi
+
+    - name: Verify environment health
+      shell: bash
+      run: |
+        cd bbl-state/${{ inputs.env_name }}
+        
+        # Verify BBL environment is working
+        echo "Verifying BBL environment..."
+        bbl print-env
+        
+        # Test jumpbox connectivity
+        echo "Testing jumpbox connectivity..."
+        eval "$(bbl print-env)"
+        
+        # Extract jumpbox key and test SSH
+        bosh int vars/jumpbox-deployment-vars.yml --path /jumpbox_ssh/private_key > jumpbox.key
+        chmod 600 jumpbox.key
+        
+        jumpbox_ip=$(bbl outputs | grep jumpbox_url | cut -d' ' -f2 | cut -d':' -f1)
+        
+        # Test SSH with timeout
+        timeout 30 ssh -i jumpbox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 jumpbox@${jumpbox_ip} 'echo "Jumpbox SSH test successful"' || {
+          echo "Warning: Jumpbox SSH test failed, but continuing..."
+        }
 
     - name: Commit and push BBL state
+      if: steps.bbl-up.outputs.success == 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -139,7 +237,11 @@ runs:
         fi
 
     - name: Output BBL environment info
+      if: steps.bbl-up.outputs.success == 'true'
       shell: bash
       run: |
         cd bbl-state/${{ inputs.env_name }}
+        echo "BBL Environment Information:"
         bbl print-env
+        echo "BBL Outputs:"
+        bbl outputs

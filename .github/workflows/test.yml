@@ -39,6 +39,7 @@ jobs:
 
   setup-test-environment:
     name: Setup Test Environment
+    needs: [get-version]
     runs-on: ubuntu-latest
     if: inputs.skip_setup != true
     steps:
