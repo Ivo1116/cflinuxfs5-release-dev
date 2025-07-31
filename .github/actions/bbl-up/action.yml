@@ -87,6 +87,44 @@ runs:
         terraform version
         bosh --version
 
+    - name: Create BOSH director configuration
+      shell: bash
+      run: |
+        mkdir -p bbl-state/${{ inputs.env_name }}/plan-patches
+        
+        # Create ops file to fix networking and download issues
+        cat > bbl-state/${{ inputs.env_name }}/plan-patches/director-network-fix.yml << 'EOF'
+        # Fix network connectivity and download issues
+        - type: replace
+          path: /instance_groups/name=bosh/jobs/name=bosh/properties/director/default_ssh_options?
+          value:
+            gateway_host: ((external_ip))
+            gateway_user: jumpbox
+            gateway_identity_path: /var/vcap/store/bosh_director/ssh/jumpbox
+
+        # Use different download strategy
+        - type: replace
+          path: /instance_groups/name=bosh/jobs/name=bosh/properties/blobstore?
+          value:
+            provider: local
+            options:
+              blobstore_path: /var/vcap/store/bosh_director/blobstore
+
+        # Increase timeouts
+        - type: replace
+          path: /instance_groups/name=bosh/jobs/name=bosh/properties/director/worker_timeout?
+          value: 900
+        
+        # Add DNS configuration
+        - type: replace
+          path: /instance_groups/name=bosh/networks/0/static_ips?/-
+          value: ((internal_ip))
+        EOF
+        
+        # Also suppress terraform warnings
+        mkdir -p bbl-state/${{ inputs.env_name }}/vars
+        echo 'system_domain = ""' > bbl-state/${{ inputs.env_name }}/vars/bbl.tfvars
+
     - name: Run BBL Up
       id: bbl-up
       shell: bash
@@ -122,6 +160,10 @@ runs:
         export BBL_GCP_ZONE="${{ inputs.gcp_zone }}"
         export BBL_GCP_REGION="${{ inputs.gcp_region }}"
         export BBL_IAAS=gcp
+
+        # Suppress terraform warnings
+        export TF_VAR_system_domain=""
+        export TF_IN_AUTOMATION=true
 
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
           echo "${CFLINUXFS5_LB_CERT}" > lb-cert.pem
