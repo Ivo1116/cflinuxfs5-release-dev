@@ -22,26 +22,28 @@ on:
         default: false
 
 jobs:
-  setup-test-environment:
-    name: Setup Test Environment
+  get-version:
+    name: Get Version
     runs-on: ubuntu-latest
-    if: inputs.skip_setup != true
     outputs:
       version: ${{ steps.get-version.outputs.version }}
-      environment_ready: ${{ steps.bbl-up.outputs.success }}
     steps:
-      - name: Checkout self
-        uses: actions/checkout@v4
-
       - name: Get version info
         id: get-version
         run: |
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             echo "version=${{ github.event.client_payload.version }}" >> $GITHUB_OUTPUT
-            echo "BUILD_RUN_ID=${{ github.event.client_payload.workflow_run_id }}" >> $GITHUB_ENV
           else
             echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
           fi
+
+  setup-test-environment:
+    name: Setup Test Environment
+    runs-on: ubuntu-latest
+    if: inputs.skip_setup != true
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
 
       - name: Download build artifacts
         if: env.BUILD_RUN_ID != ''
@@ -67,32 +69,10 @@ jobs:
           CFLINUXFS5_LB_CERT: ${{ secrets.CFLINUXFS5_LB_CERT }}
           CFLINUXFS5_LB_KEY: ${{ secrets.CFLINUXFS5_LB_KEY }}
 
-  get-version:
-    name: Get Version
-    runs-on: ubuntu-latest
-    if: inputs.skip_setup == true
-    outputs:
-      version: ${{ steps.get-version.outputs.version }}
-    steps:
-      - name: Get version info
-        id: get-version
-        run: |
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            echo "version=${{ github.event.client_payload.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          fi
-
   deploy-cf:
     name: Deploy CF with New Rootfs
     needs: [setup-test-environment, get-version]
     runs-on: ubuntu-latest
-    if: |
-      always() && 
-      (inputs.skip_setup == true || needs.setup-test-environment.outputs.environment_ready == 'true')
-    outputs:
-      deployment_ready: ${{ steps.deploy.outputs.success }}
-      version: ${{ inputs.skip_setup == true && needs.get-version.outputs.version || needs.setup-test-environment.outputs.version }}
     steps:
       - name: Checkout self
         uses: actions/checkout@v4
@@ -103,7 +83,7 @@ jobs:
         with:
           stack: cflinuxfs5
           env_name: cflinuxfs5test
-          version: ${{ inputs.skip_setup == true && needs.get-version.outputs.version || needs.setup-test-environment.outputs.version }}
+          version: ${{ steps.get-version.outputs.version }}
           bbl_state_repo: ivo1116/buildpacks-envs
           bbl_state_branch: main
         env:
@@ -116,7 +96,7 @@ jobs:
     name: Run Cloud Foundry Acceptance Tests
     needs: [deploy-cf]
     runs-on: ubuntu-latest
-    if: needs.deploy-cf.outputs.deployment_ready == 'true' && inputs.skip_cats != true
+    if: inputs.skip_cats != true
     outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
     steps:
@@ -140,7 +120,6 @@ jobs:
     name: Check for Race Conditions
     needs: [deploy-cf, run-cats]
     runs-on: ubuntu-latest
-    if: always() && needs.deploy-cf.outputs.deployment_ready == 'true'
     outputs:
       race_check_passed: ${{ steps.race-check.outputs.success }}
     steps:
