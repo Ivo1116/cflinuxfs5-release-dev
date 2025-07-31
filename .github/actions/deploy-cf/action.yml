@@ -87,6 +87,8 @@ runs:
       run: |
         cd bbl-state
 
+        cd cflinuxfs5
+
         mkdir ../deployment-source-config
 
         bbl print-env > ../deployment-source-config/source_file.yml
