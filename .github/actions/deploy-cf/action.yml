@@ -80,6 +80,12 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
+    - name: Download golang blob from official blobstore
+      shell: bash
+      run: |
+        mkdir -p blobs/golang-1-linux
+        aws s3 cp s3://bosh-package-golang-release/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+
     - name: Get GCP stemcell
       shell: bash
       run: |
