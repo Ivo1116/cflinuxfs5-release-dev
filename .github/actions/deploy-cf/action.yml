@@ -70,6 +70,16 @@ runs:
         path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
+    - name: Download cflinuxfs5 rootfs from S3
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: us-east-1 
+
+      run: |
+        aws s3 cp s3://cflinuxfs5test/cflinuxfs5-1.0.0-rc.1.tar.gz rootfs-artifacts/cflinuxfs5-1.0.0-rc.1.tar.gz
+
     - name: Get GCP stemcell
       shell: bash
       run: |
@@ -121,13 +131,13 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
-    - name: Upload cflinuxfs5 release
+    - name: Upload cflinuxfs5 release to BOSH director
       shell: bash
       run: |
         cd deployment-source-config
         source source_file.yml
         cd ..
-        bosh upload-release rootfs-release-artifacts/cflinuxfs5-dev.tgz --non-interactive
+        bosh upload-release rootfs-artifacts/cflinuxfs5-1.0.0-rc.1.tar.gz --non-interactive
 
     - name: Create CAPI release with rootfs
       shell: bash

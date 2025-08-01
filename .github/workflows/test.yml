@@ -99,6 +99,8 @@ jobs:
           BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
           BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
           CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
   run-cats:
     name: Run Cloud Foundry Acceptance Tests
