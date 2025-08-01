@@ -60,6 +60,7 @@ runs:
         repository: cloudfoundry/capi-release
         ref: main
         path: capi-release
+        submodules: recursive
 
     - name: Checkout BBL state repo
       uses: actions/checkout@v4
