@@ -146,7 +146,11 @@ runs:
       run: |
         cd deployment-source-config
         source source_file.yml
-        
+
+        echo "Runner public IP (ifconfig.me): $(curl -s ifconfig.me)"
+        echo "Runner public IP (ipinfo.io): $(curl -s ipinfo.io/ip)"
+        echo "Runner public IP (icanhazip.com): $(curl -s icanhazip.com)"
+            
         bosh -d rootfs-smoke-test deploy \
         ../rootfs-release-artifacts/manifests/manifest.yml \
         --vars-store smoke-test-vars.yml \
