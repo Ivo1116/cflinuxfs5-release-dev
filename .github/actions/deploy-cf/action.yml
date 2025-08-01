@@ -148,8 +148,9 @@ runs:
         source source_file.yml
         
         bosh -d rootfs-smoke-test deploy \
-          ../rootfs-release-artifacts/manifests/manifest.yml \
-          --vars-store smoke-test-vars.yml
+        ../rootfs-release-artifacts/manifests/manifest.yml \
+        --vars-store smoke-test-vars.yml \
+        --non-interactive
 
     - name: Run rootfs smoke test
       shell: bash
