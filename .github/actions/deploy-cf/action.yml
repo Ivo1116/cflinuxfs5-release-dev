@@ -113,6 +113,7 @@ runs:
         mkdir -p ../rootfs-release-artifacts
         cd ../${{ inputs.stack }}-release
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
+          bosh sync-blobs
           bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
         fi
 
