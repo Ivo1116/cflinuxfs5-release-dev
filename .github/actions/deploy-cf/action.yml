@@ -94,9 +94,9 @@ runs:
 
         cd cflinuxfs5
 
-        mkdir ../deployment-source-config
+        mkdir ../../deployment-source-config
 
-        bbl print-env > ../deployment-source-config/source_file.yml
+        bbl print-env > ../../deployment-source-config/source_file.yml
 
     - name: Overwrite rootfs release
       shell: bash
@@ -130,12 +130,9 @@ runs:
       run: |
         cd buildpacks-ci
         
-        # Run equivalent of use-new-buildpack-bosh-releases task
         mkdir -p ../built-buildpacks-artifacts ../buildpacks-opsfile
         
-        # Create opsfile for latest buildpack releases
         cat > ../buildpacks-opsfile/use-latest-buildpack-releases.yml << 'EOF'
-        # This would contain ops-file entries for each buildpack
         EOF
 
     - name: Deploy rootfs smoke test
