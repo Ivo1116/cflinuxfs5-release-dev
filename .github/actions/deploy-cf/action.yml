@@ -75,14 +75,6 @@ runs:
       run: |
         wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
-    - name: Upload ubuntu-noble stemcell
-      shell: bash
-      run: |
-        cd deployment-source-config
-        source source_file.yml
-        cd ..
-        bosh upload-stemcell gcp-stemcell.tgz --non-interactive
-
     - name: Install BBL & bosh
       shell: bash
       run: |
@@ -120,6 +112,14 @@ runs:
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
           bosh create-release --force --tarball=../rootfs-release-artifacts/cflinuxfs5-dev.tgz
         fi
+
+    - name: Upload ubuntu-noble stemcell
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        cd ..
+        bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
     - name: Create CAPI release with rootfs
       shell: bash
