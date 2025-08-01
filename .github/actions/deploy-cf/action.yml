@@ -141,15 +141,15 @@ runs:
         mkdir -p rootfs-release-artifacts/manifests
         cp cflinuxfs5-release/manifests/manifest.yml rootfs-release-artifacts/manifests/manifest.yml
 
-        - name: Deploy rootfs smoke test
-          shell: bash
-          run: |
-            cd deployment-source-config
-            source source_file.yml
-            
-            bosh -d rootfs-smoke-test deploy \
-              ../rootfs-release-artifacts/manifests/manifest.yml \
-              --vars-store smoke-test-vars.yml
+    - name: Deploy rootfs smoke test
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        
+        bosh -d rootfs-smoke-test deploy \
+          ../rootfs-release-artifacts/manifests/manifest.yml \
+          --vars-store smoke-test-vars.yml
 
     - name: Run rootfs smoke test
       shell: bash
