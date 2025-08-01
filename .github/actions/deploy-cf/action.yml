@@ -121,6 +121,14 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
+    - name: Upload cflinuxfs5 release
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        cd ..
+        bosh upload-release rootfs-release-artifacts/cflinuxfs5-dev.tgz --non-interactive
+
     - name: Create CAPI release with rootfs
       shell: bash
       run: |
@@ -155,10 +163,6 @@ runs:
         cd deployment-source-config
         source source_file.yml
 
-        echo "Runner public IP (ifconfig.me): $(curl -s ifconfig.me)"
-        echo "Runner public IP (ipinfo.io): $(curl -s ipinfo.io/ip)"
-        echo "Runner public IP (icanhazip.com): $(curl -s icanhazip.com)"
-            
         bosh -d rootfs-smoke-test deploy \
         ../rootfs-release-artifacts/manifests/manifest.yml \
         --vars-store smoke-test-vars.yml \
@@ -184,7 +188,6 @@ runs:
         cd deployment-source-config
         source source_file.yml
         
-        # Deploy CF with all the releases and ops files
         bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
           --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
           --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
