@@ -46,12 +46,12 @@ runs:
         ref: master
         path: buildpacks-ci
 
-    - name: Checkout cflinuxfs5-release
+    - name: Checkout rootfs release
       uses: actions/checkout@v4
       with:
-        repository: ivo1116/cflinuxfs5-release
+        repository: ivo1116/${{ inputs.stack }}-release
         ref: main
-        path: cflinuxfs5-release
+        path: ${{ inputs.stack }}-release
         token: ${{ env.CFLINUXFS5_TOKEN }}
 
     - name: Checkout CAPI release
@@ -70,15 +70,15 @@ runs:
         path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
-    - name: Download cflinuxfs5 rootfs from S3
+    - name: Download rootfs from S3
       shell: bash
       env:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
         AWS_DEFAULT_REGION: us-east-1 
-
       run: |
-        aws s3 cp s3://cflinuxfs5test/cflinuxfs5-1.0.0-rc.1.tar.gz rootfs-artifacts/cflinuxfs5-1.0.0-rc.1.tar.gz
+        mkdir -p rootfs-artifacts
+        aws s3 cp s3://cflinuxfs5test/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
 
     - name: Get GCP stemcell
       shell: bash
@@ -101,26 +101,19 @@ runs:
       shell: bash
       run: |
         cd bbl-state
-
-        cd cflinuxfs5
-
-        mkdir ../../deployment-source-config
-
+        cd ${{ inputs.stack }}
+        mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
     - name: Overwrite rootfs release
       shell: bash
       run: |
         cd buildpacks-ci
-        
         export STACK='${{ inputs.stack }}'
-        
         mkdir -p ../rootfs-release-artifacts
-        
-        cd ../cflinuxfs5-release
-        
+        cd ../${{ inputs.stack }}-release
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
-          bosh create-release --force --tarball=../rootfs-release-artifacts/cflinuxfs5-dev.tgz
+          bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
         fi
 
     - name: Upload ubuntu-noble stemcell
@@ -131,23 +124,20 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
-    - name: Upload cflinuxfs5 release to BOSH director
+    - name: Upload rootfs release to BOSH director
       shell: bash
       run: |
         cd deployment-source-config
         source source_file.yml
         cd ..
-        bosh upload-release rootfs-artifacts/cflinuxfs5-1.0.0-rc.1.tar.gz --non-interactive
+        bosh upload-release rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz --non-interactive
 
     - name: Create CAPI release with rootfs
       shell: bash
       run: |
         cd buildpacks-ci
-        
         export STACK='${{ inputs.stack }}'
-        
         mkdir -p ../capi-release-artifacts
-        
         cd ../capi-release
         bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
 
@@ -155,9 +145,7 @@ runs:
       shell: bash
       run: |
         cd buildpacks-ci
-        
         mkdir -p ../built-buildpacks-artifacts ../buildpacks-opsfile
-        
         cat > ../buildpacks-opsfile/use-latest-buildpack-releases.yml << 'EOF'
         EOF
 
@@ -165,28 +153,25 @@ runs:
       shell: bash
       run: |
         mkdir -p rootfs-release-artifacts/manifests
-        cp cflinuxfs5-release/manifests/manifest.yml rootfs-release-artifacts/manifests/manifest.yml
+        cp ${{ inputs.stack }}-release/manifests/manifest.yml rootfs-release-artifacts/manifests/manifest.yml
 
     - name: Deploy rootfs smoke test
       shell: bash
       run: |
         cd deployment-source-config
         source source_file.yml
-
         bosh -d rootfs-smoke-test deploy \
-        ../rootfs-release-artifacts/manifests/manifest.yml \
-        --vars-store smoke-test-vars.yml \
-        --non-interactive
+          ../rootfs-release-artifacts/manifests/manifest.yml \
+          --vars-store smoke-test-vars.yml \
+          --non-interactive
 
     - name: Run rootfs smoke test
       shell: bash
       run: |
         set -euo pipefail
-
         cd deployment-source-config
         source source_file.yml
         cd ..
-
         bosh -d rootfs-smoke-test run-errand smoke-tests
 
     - name: Deploy CF
@@ -194,20 +179,17 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        
         cd deployment-source-config
         source source_file.yml
-        
         bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
           --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
           --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
           --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
-          --ops-file ../cf-deployment/operations/experimental/add-cflinuxfs5.yml \
-          --ops-file ../cf-deployment/operations/experimental/set-cflinuxfs5-default-stack.yml \
+          --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
+          --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
           --ops-file ../buildpacks-opsfile/use-latest-buildpack-releases.yml \
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
-
         echo "success=true" >> $GITHUB_OUTPUT
