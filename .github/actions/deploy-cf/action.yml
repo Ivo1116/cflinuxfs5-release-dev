@@ -153,11 +153,6 @@ runs:
 
     - name: Run rootfs smoke test
       shell: bash
-      env:
-        GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
-        BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
-        CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
       run: |
         set -euo pipefail
 
