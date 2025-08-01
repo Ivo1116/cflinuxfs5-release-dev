@@ -7,19 +7,20 @@ on:
     inputs:
       version:
         description: 'Version to test'
+        default: 'v1.0.0-rc.1'
         required: true
       skip_cats:
         description: 'Skip CATs tests'
         type: boolean
         default: false
       skip_cleanup:
-        description: 'Skip infrastructure cleanup (for debugging)'
+        description: 'Skip infrastructure cleanup'
         type: boolean
-        default: false
+        default: true
       skip_setup:
-        description: 'Skip setup test environment (assumes environment already exists)'
+        description: 'Skip setup test environment'
         type: boolean
-        default: false
+        default: true
 
 jobs:
   get-version:
