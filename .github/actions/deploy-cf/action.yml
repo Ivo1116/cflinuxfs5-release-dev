@@ -153,13 +153,19 @@ runs:
 
     - name: Run rootfs smoke test
       shell: bash
+      env:
+        GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+        BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
+        CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
       run: |
-        cd buildpacks-ci
-        
-        export ENV_NAME='${{ inputs.env_name }}'
-        
-        # Run equivalent of run-rootfs-smoke-test task
-        echo "Running rootfs smoke test..."
+        set -euo pipefail
+
+        cd deployment-source-config
+        source source_file.yml
+        cd ..
+
+        bosh -d rootfs-smoke-test run-errand smoke-tests
 
     - name: Deploy CF
       id: deploy
