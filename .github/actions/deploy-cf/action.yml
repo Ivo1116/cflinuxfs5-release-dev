@@ -139,12 +139,19 @@ runs:
         echo "Backing up original blobs.yml..."
         cp config/blobs.yml config/blobs.yml.backup
         
+        echo "Checking golang blob SHA..."
+        ACTUAL_GOLANG_SHA=$(sha1sum "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" | cut -d' ' -f1)
+        EXPECTED_GOLANG_SHA="fd914ce7543010ba6f6664df8f80817d07c98eb6b7de17da1dd9f2fceb79485c"
+        
+        echo "Expected golang SHA: $EXPECTED_GOLANG_SHA"
+        echo "Actual golang SHA: $ACTUAL_GOLANG_SHA"
+        
         echo "Creating local-only blobs.yml..."
         cat > config/blobs.yml << EOF
         ---
         golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
           size: $(stat -c%s "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9")
-          sha: fd914ce7543010ba6f6664df8f80817d07c98eb6b7de17da1dd9f2fceb79485c
+          sha: $ACTUAL_GOLANG_SHA
         rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
           sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
