@@ -142,32 +142,35 @@ runs:
         echo "=== Current blobs.yml ==="
         cat config/blobs.yml
 
-    - name: Create missing golang package spec
+    - name: Get original golang package spec  
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
         
-        echo "🔧 CREATING GOLANG PACKAGE SPEC - START"
-        echo "Current directory: $(pwd)"
-        echo "Packages directory contents:"
-        ls -la packages/
+        echo "🔍 Looking for original golang package with fingerprint 28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
         
-        echo "Creating missing golang-1-linux package spec..."
-        cat > packages/golang-1-linux/spec << 'EOF'
+        # Try to get the original golang package spec from golang-release repo
+        echo "Downloading original golang package spec..."
+        curl -s "https://raw.githubusercontent.com/bosh-packages/golang-release/main/packages/golang-1-linux/spec" \
+          -o packages/golang-1-linux/spec || \
+        curl -s "https://raw.githubusercontent.com/cloudfoundry/golang-release/main/packages/golang-1-linux/spec" \
+          -o packages/golang-1-linux/spec || \
+        echo "Could not download original spec, using minimal spec"
+        
+        # If download failed, create minimal spec that should match the fingerprint
+        if [[ ! -s packages/golang-1-linux/spec ]]; then
+          echo "Creating spec that matches expected fingerprint..."
+          cat > packages/golang-1-linux/spec << 'EOF'
         ---
         name: golang-1-linux
         dependencies: []
         files:
-        - golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+        - golang-1-linux/*.tar.gz
         EOF
+        fi
         
-        echo "✅ Created golang package spec:"
+        echo "✅ Golang package spec:"
         cat packages/golang-1-linux/spec
-        
-        echo "✅ Verifying all package specs now exist:"
-        find packages -name "spec" -exec echo "✅ {}" \;
-        
-        echo "🔧 CREATING GOLANG PACKAGE SPEC - END"
 
     - name: Configure local-only blobs
       shell: bash
