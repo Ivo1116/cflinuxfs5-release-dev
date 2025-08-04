@@ -198,6 +198,21 @@ runs:
         echo "Local-only blobs.yml created:"
         cat config/blobs.yml
 
+    - name: Check package usage in jobs
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        echo "=== Checking which jobs use golang or rootfs-certsplitter ==="
+        
+        echo "Jobs that reference golang:"
+        grep -r "golang" jobs/ || echo "No golang references in jobs"
+        
+        echo "Jobs that reference rootfs-certsplitter:"  
+        grep -r "rootfs-certsplitter" jobs/ || echo "No rootfs-certsplitter references in jobs"
+        
+        echo "=== All job specs ==="
+        find jobs -name "spec" -exec echo "=== {} ===" \; -exec cat {} \;
+
     - name: Overwrite rootfs release
       shell: bash
       run: |
