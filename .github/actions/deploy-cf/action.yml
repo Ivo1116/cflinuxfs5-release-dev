@@ -80,30 +80,31 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
-    - name: Download golang blob from official blobstore
+    - name: Prepare local blobs
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
         
-        # Let bosh try to sync blobs first (it knows the right sources)
-        echo "Attempting to sync blobs with bosh..."
-        bosh sync-blobs || echo "Sync-blobs failed, will download manually"
+        echo "Setting up local blobs directory..."
+        mkdir -p blobs/rootfs
+        mkdir -p blobs/golang-1-linux
         
-        # If sync-blobs didn't work, download from the correct golang release blobstore
-        if [[ ! -f "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" ]]; then
-          echo "Manual download needed..."
-          mkdir -p blobs/golang-1-linux
-          
-          # Try the official golang blobstore (different URL structure)
-          aws s3 cp s3://bosh-golang-release/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 \
-            blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 || \
-          
-          # If that fails, try cloudfoundry blobstore
-          aws s3 cp s3://cf-buildpacks-golang/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 \
-            blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 || \
-          
-          echo "Could not find golang blob in public repositories"
+        # Copy the rootfs we already downloaded to the blobs directory
+        if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
+          echo "Copying rootfs tarball to blobs directory..."
+          cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
+          echo "Rootfs blob prepared"
         fi
+        
+        # Download golang blob from the official Go releases
+        echo "Downloading golang blob..."
+        curl -L -o "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
+          "https://go.dev/dl/go1.21.8.linux-amd64.tar.gz" || \
+        curl -L -o "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
+          "https://golang.org/dl/go1.21.8.linux-amd64.tar.gz"
+        
+        echo "Local blobs prepared successfully"
+        ls -la blobs/*/
 
     - name: Get GCP stemcell
       shell: bash
