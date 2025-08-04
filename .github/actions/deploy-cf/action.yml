@@ -139,7 +139,18 @@ runs:
         mkdir -p ../rootfs-release-artifacts
         cd ../${{ inputs.stack }}-release
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
-          bosh sync-blobs
+          echo "Checking if we need to sync blobs..."
+          
+          # Only sync blobs if local blobs don't exist
+          if [[ ! -f "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]] || [[ ! -f "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" ]]; then
+            echo "Local blobs missing, running bosh sync-blobs..."
+            bosh sync-blobs
+          else
+            echo "Local blobs exist, skipping sync-blobs"
+            echo "Local blobs found:"
+            ls -la blobs/*/
+          fi
+          
           bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
         fi
 
