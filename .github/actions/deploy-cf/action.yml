@@ -118,7 +118,7 @@ runs:
         echo "=== Looking for rootfs tarball ==="
         find . -name "*${{ inputs.stack }}*${{ inputs.version }}*" -type f || echo "No rootfs files found"
 
-    - name: Create rootfs release
+    - name: Create rootfs release (rootfs-only)
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
@@ -127,29 +127,36 @@ runs:
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
           echo "Found rootfs tarball, copying to blobs directory"
           mkdir -p blobs/rootfs
-          mkdir -p blobs/golang-1-linux
           
           # Copy rootfs with the versioned filename
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
-          # Try to download the golang blob from multiple sources
-          echo "Downloading golang blob..."
-          GOLANG_BLOB="blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
-          
-          # Try different sources for the golang blob
-          wget -O "$GOLANG_BLOB" "https://github.com/cloudfoundry/golang-release/releases/download/v0.151.0/golang-1-linux-28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" || \
-          curl -L -o "$GOLANG_BLOB" "https://storage.googleapis.com/cf-deployment-compiled-releases/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" || \
-          wget -O "$GOLANG_BLOB" "https://bosh.io/d/github.com/cloudfoundry/golang-release?v=0.151.0" || \
-          echo "Could not download golang blob, will try to create minimal release"
-          
-          # Check if we got a proper golang blob (should be much larger than 133 bytes)
-          if [[ -f "$GOLANG_BLOB" ]] && [[ $(stat -c%s "$GOLANG_BLOB") -lt 1000 ]]; then
-            echo "Golang blob download failed (file too small), removing and continuing without it"
-            rm -f "$GOLANG_BLOB"
+          # Remove packages that depend on golang
+          echo "Modifying release to remove golang dependencies..."
+          if [[ -d "packages" ]]; then
+            # Find packages that depend on golang and remove them
+            for pkg_dir in packages/*/; do
+              if [[ -f "$pkg_dir/spec" ]] && grep -q "golang-1-linux" "$pkg_dir/spec"; then
+                pkg_name=$(basename "$pkg_dir")
+                echo "Removing package $pkg_name (depends on golang)"
+                rm -rf "$pkg_dir"
+              fi
+            done
           fi
           
-          # Create a new blobs.yml with our available blobs
+          # Modify jobs to remove golang package dependencies
+          if [[ -d "jobs" ]]; then
+            for job_dir in jobs/*/; do
+              if [[ -f "$job_dir/spec" ]]; then
+                # Remove golang package references from job specs
+                sed -i '/golang-1-linux/d' "$job_dir/spec" || true
+                echo "Cleaned job $(basename "$job_dir") spec"
+              fi
+            done
+          fi
+          
+          # Create a new blobs.yml with only rootfs
           cat > config/blobs.yml << EOF
         rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
@@ -158,15 +165,6 @@ runs:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}.tar.gz")
           sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
         EOF
-          
-          # Add golang blob to blobs.yml if we have it
-          if [[ -f "$GOLANG_BLOB" ]] && [[ $(stat -c%s "$GOLANG_BLOB") -gt 1000 ]]; then
-            cat >> config/blobs.yml << EOF
-        golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
-          size: $(stat -c%s "$GOLANG_BLOB")
-          sha: $(sha1sum "$GOLANG_BLOB" | cut -d' ' -f1)
-        EOF
-          fi
           
           echo "Created new blobs.yml:"
           cat config/blobs.yml
