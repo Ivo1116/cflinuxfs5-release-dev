@@ -142,6 +142,26 @@ runs:
         echo "=== Current blobs.yml ==="
         cat config/blobs.yml
 
+    - name: Create missing golang package spec
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        
+        echo "Creating missing golang-1-linux package spec..."
+        cat > packages/golang-1-linux/spec << 'EOF'
+        ---
+        name: golang-1-linux
+        dependencies: []
+        files:
+        - golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+        EOF
+        
+        echo "Created golang package spec:"
+        cat packages/golang-1-linux/spec
+        
+        echo "Verifying all package specs now exist:"
+        find packages -name "spec" -exec echo "✅ {}" \;
+
     - name: Configure local-only blobs
       shell: bash
       run: |
