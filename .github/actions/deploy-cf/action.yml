@@ -118,7 +118,7 @@ runs:
         echo "=== Looking for rootfs tarball ==="
         find . -name "*${{ inputs.stack }}*${{ inputs.version }}*" -type f || echo "No rootfs files found"
 
-    - name: Create rootfs release (complete cleanup)
+    - name: Create minimal rootfs-only release
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
@@ -132,54 +132,63 @@ runs:
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
-          echo "=== Original release structure ==="
-          echo "Packages:"
-          ls -la packages/ || echo "No packages directory"
-          echo "Jobs:"
-          ls -la jobs/ || echo "No jobs directory"
+          # Backup original files
+          cp -r packages packages.backup || true
+          cp -r jobs jobs.backup || true
           
-          # First, identify and remove all packages that depend on golang
-          echo "=== Removing golang-dependent packages ==="
-          GOLANG_PACKAGES=""
-          if [[ -d "packages" ]]; then
-            for pkg_dir in packages/*/; do
-              if [[ -f "$pkg_dir/spec" ]] && (grep -q "golang-1-linux" "$pkg_dir/spec" || grep -q "golang" "$pkg_dir/spec"); then
-                pkg_name=$(basename "$pkg_dir")
-                echo "Found golang-dependent package: $pkg_name"
-                GOLANG_PACKAGES="$GOLANG_PACKAGES $pkg_name"
-                rm -rf "$pkg_dir"
-                echo "Removed package: $pkg_name"
-              fi
-            done
+          # Keep only the essential rootfs package
+          echo "=== Creating minimal rootfs package ==="
+          rm -rf packages/*
+          mkdir -p "packages/${{ inputs.stack }}"
+          
+          # Create a simple rootfs package spec
+          cat > "packages/${{ inputs.stack }}/spec" << EOF
+        name: ${{ inputs.stack }}
+        
+        dependencies: []
+        
+        files:
+        - rootfs/${{ inputs.stack }}-*.tar.gz
+        EOF
+          
+          # Create a simple packaging script
+          cat > "packages/${{ inputs.stack }}/packaging" << EOF
+        #!/bin/bash
+        set -e
+        
+        # Extract rootfs
+        mkdir -p \${BOSH_INSTALL_TARGET}/rootfs
+        tar -xzf rootfs/${{ inputs.stack }}-*.tar.gz -C \${BOSH_INSTALL_TARGET}/rootfs --strip-components=1
+        EOF
+          
+          chmod +x "packages/${{ inputs.stack }}/packaging"
+          
+          # Keep only essential jobs and clean them
+          echo "=== Creating minimal job specs ==="
+          if [[ -d "jobs/${{ inputs.stack }}-rootfs-setup" ]]; then
+            # Clean the rootfs-setup job
+            cat > "jobs/${{ inputs.stack }}-rootfs-setup/spec" << EOF
+        name: ${{ inputs.stack }}-rootfs-setup
+        
+        templates: {}
+        
+        packages:
+        - ${{ inputs.stack }}
+        
+        properties: {}
+        EOF
           fi
           
-          echo "Golang-dependent packages removed: $GOLANG_PACKAGES"
+          # Remove other jobs that might have golang dependencies
+          for job_dir in jobs/*/; do
+            job_name=$(basename "$job_dir")
+            if [[ "$job_name" != "${{ inputs.stack }}-rootfs-setup" ]]; then
+              echo "Removing job: $job_name"
+              rm -rf "$job_dir"
+            fi
+          done
           
-          # Now update all job specs to remove references to these packages
-          echo "=== Updating job specifications ==="
-          if [[ -d "jobs" ]]; then
-            for job_dir in jobs/*/; do
-              job_name=$(basename "$job_dir")
-              if [[ -f "$job_dir/spec" ]]; then
-                echo "Processing job: $job_name"
-                
-                # Remove golang package references
-                sed -i '/golang-1-linux/d' "$job_dir/spec" || true
-                
-                # Remove references to packages we deleted
-                for pkg in $GOLANG_PACKAGES; do
-                  sed -i "/- $pkg/d" "$job_dir/spec" || true
-                  sed -i "/$pkg/d" "$job_dir/spec" || true
-                done
-                
-                echo "Updated job spec for: $job_name"
-                echo "Current packages in $job_name spec:"
-                grep -A 20 "packages:" "$job_dir/spec" || echo "No packages section found"
-              fi
-            done
-          fi
-          
-          # Create a new blobs.yml with only rootfs
+          # Create minimal blobs.yml
           cat > config/blobs.yml << EOF
         rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
@@ -189,20 +198,17 @@ runs:
           sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
         EOF
           
-          echo "=== Final release structure ==="
-          echo "Remaining packages:"
-          ls -la packages/ || echo "No packages directory"
+          echo "=== Final minimal release structure ==="
+          echo "Packages:"
+          find packages -name "spec" -exec echo "=== {} ===" \; -exec cat {} \;
           echo "Jobs:"
-          ls -la jobs/ || echo "No jobs directory"
+          find jobs -name "spec" -exec echo "=== {} ===" \; -exec cat {} \;
           
-          echo "Created new blobs.yml:"
+          echo "Blobs:"
           cat config/blobs.yml
           
-          echo "Contents of blobs directory:"
-          find blobs -type f -exec ls -la {} \;
-          
-          # Create release as dev version (bypasses blobstore entirely)
-          echo "Creating development release..."
+          # Create release as dev version
+          echo "Creating minimal development release..."
           bosh create-release --force --version="dev-$(date +%s)" --tarball="../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz"
           
           # Create ops file for this dev release
