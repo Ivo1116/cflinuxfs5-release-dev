@@ -147,6 +147,11 @@ runs:
       run: |
         cd ${{ inputs.stack }}-release
         
+        echo "🔧 CREATING GOLANG PACKAGE SPEC - START"
+        echo "Current directory: $(pwd)"
+        echo "Packages directory contents:"
+        ls -la packages/
+        
         echo "Creating missing golang-1-linux package spec..."
         cat > packages/golang-1-linux/spec << 'EOF'
         ---
@@ -156,11 +161,13 @@ runs:
         - golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
         EOF
         
-        echo "Created golang package spec:"
+        echo "✅ Created golang package spec:"
         cat packages/golang-1-linux/spec
         
-        echo "Verifying all package specs now exist:"
+        echo "✅ Verifying all package specs now exist:"
         find packages -name "spec" -exec echo "✅ {}" \;
+        
+        echo "🔧 CREATING GOLANG PACKAGE SPEC - END"
 
     - name: Configure local-only blobs
       shell: bash
