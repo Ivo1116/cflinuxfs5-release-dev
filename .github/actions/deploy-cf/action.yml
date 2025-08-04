@@ -84,8 +84,26 @@ runs:
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
-        mkdir -p blobs/golang-1-linux
-        aws s3 cp s3://bosh-package-golang-release/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+        
+        # Let bosh try to sync blobs first (it knows the right sources)
+        echo "Attempting to sync blobs with bosh..."
+        bosh sync-blobs || echo "Sync-blobs failed, will download manually"
+        
+        # If sync-blobs didn't work, download from the correct golang release blobstore
+        if [[ ! -f "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" ]]; then
+          echo "Manual download needed..."
+          mkdir -p blobs/golang-1-linux
+          
+          # Try the official golang blobstore (different URL structure)
+          aws s3 cp s3://bosh-golang-release/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 \
+            blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 || \
+          
+          # If that fails, try cloudfoundry blobstore
+          aws s3 cp s3://cf-buildpacks-golang/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 \
+            blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 || \
+          
+          echo "Could not find golang blob in public repositories"
+        fi
 
     - name: Get GCP stemcell
       shell: bash
