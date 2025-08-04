@@ -198,6 +198,21 @@ runs:
         echo "Local-only blobs.yml created:"
         cat config/blobs.yml
 
+    - name: Debug package fingerprints
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        
+        echo "=== Calculating current package fingerprints ==="
+        echo "Current golang spec:"
+        cat packages/golang-1-linux/spec
+        
+        echo "Current rootfs-certsplitter spec:"  
+        cat packages/rootfs-certsplitter/spec
+        
+        echo "=== BOSH package fingerprint calculation ==="
+        bosh create-release --dry-run --force || echo "Dry run failed, showing error context"
+
     - name: Check package usage in jobs
       shell: bash
       run: |
