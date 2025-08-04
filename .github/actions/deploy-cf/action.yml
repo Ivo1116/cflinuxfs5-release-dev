@@ -80,12 +80,6 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
-    - name: Download golang blob from official blobstore
-      shell: bash
-      run: |
-        mkdir -p blobs/golang-1-linux
-        aws s3 cp s3://bosh-package-golang-release/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
-
     - name: Get GCP stemcell
       shell: bash
       run: |
@@ -106,21 +100,53 @@ runs:
     - name: Create deployment source config
       shell: bash
       run: |
-        cd bbl-state
-        cd ${{ inputs.stack }}
+        cd bbl-state/${{ inputs.stack }}
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
-    - name: Overwrite rootfs release
+    - name: Setup directories and check files
       shell: bash
       run: |
-        cd buildpacks-ci
-        export STACK='${{ inputs.stack }}'
-        mkdir -p ../rootfs-release-artifacts
-        cd ../${{ inputs.stack }}-release
+        mkdir -p rootfs-release-artifacts/manifests
+        mkdir -p capi-release-artifacts
+        mkdir -p buildpacks-opsfile
+        
+        echo "=== Current directory contents ==="
+        ls -la
+        echo "=== Rootfs artifacts contents ==="
+        ls -la rootfs-artifacts/ || echo "No rootfs-artifacts directory"
+        echo "=== Looking for rootfs tarball ==="
+        find . -name "*${{ inputs.stack }}*${{ inputs.version }}*" -type f || echo "No rootfs files found"
+
+    - name: Create rootfs release
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        
+        # Copy the rootfs tarball to the expected location in the release
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
-          bosh sync-blobs
-          bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
+          echo "Found rootfs tarball, copying to blobs directory"
+          mkdir -p blobs/rootfs
+          cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
+          
+          # Try to sync blobs (may fail if blobstore not configured, that's ok)
+          bosh sync-blobs || echo "Warning: Could not sync blobs, continuing anyway"
+          
+          # Create release
+          bosh create-release --force --tarball="../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz"
+          
+          # Create ops file for this dev release
+          cat > ../rootfs-release-artifacts/use-dev-release-opsfile.yml << EOF
+        - type: replace
+          path: /releases/name=${{ inputs.stack }}?
+          value:
+            name: ${{ inputs.stack }}
+            version: create
+            url: file://\$(pwd)/rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
+        EOF
+        else
+          echo "ERROR: No rootfs tarball found at ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
+          exit 1
         fi
 
     - name: Upload ubuntu-noble stemcell
@@ -137,29 +163,52 @@ runs:
         cd deployment-source-config
         source source_file.yml
         cd ..
-        bosh upload-release rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz --non-interactive
+        
+        if [[ -f "rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz" ]]; then
+          echo "Uploading rootfs release..."
+          bosh upload-release "rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz" --non-interactive
+        else
+          echo "ERROR: Rootfs release tarball not found"
+          exit 1
+        fi
 
-    - name: Create CAPI release with rootfs
+    - name: Create CAPI release
       shell: bash
       run: |
-        cd buildpacks-ci
-        export STACK='${{ inputs.stack }}'
-        mkdir -p ../capi-release-artifacts
-        cd ../capi-release
-        bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
+        cd capi-release
+        bosh create-release --force --tarball="../capi-release-artifacts/capi-dev.tgz"
+        
+        # Create ops file for this dev release
+        cat > ../capi-release-artifacts/use-dev-release-opsfile.yml << EOF
+        - type: replace
+          path: /releases/name=capi?
+          value:
+            name: capi
+            version: create
+            url: file://\$(pwd)/capi-release-artifacts/capi-dev.tgz
+        EOF
 
-    - name: Use new buildpack BOSH releases
+    - name: Upload CAPI release to BOSH director
       shell: bash
       run: |
-        cd buildpacks-ci
-        mkdir -p ../built-buildpacks-artifacts ../buildpacks-opsfile
-        cat > ../buildpacks-opsfile/use-latest-buildpack-releases.yml << 'EOF'
+        cd deployment-source-config
+        source source_file.yml
+        cd ..
+        
+        echo "Uploading CAPI release..."
+        bosh upload-release "capi-release-artifacts/capi-dev.tgz" --non-interactive
+
+    - name: Create buildpack ops file
+      shell: bash
+      run: |
+        # Create empty buildpack ops file for now
+        cat > buildpacks-opsfile/use-latest-buildpack-releases.yml << 'EOF'
+        # Placeholder for buildpack release operations
         EOF
 
     - name: Copy rootfs smoke test manifest
       shell: bash
       run: |
-        mkdir -p rootfs-release-artifacts/manifests
         cp ${{ inputs.stack }}-release/manifests/manifest.yml rootfs-release-artifacts/manifests/manifest.yml
 
     - name: Deploy rootfs smoke test
@@ -167,6 +216,8 @@ runs:
       run: |
         cd deployment-source-config
         source source_file.yml
+        
+        echo "Deploying rootfs smoke test..."
         bosh -d rootfs-smoke-test deploy \
           ../rootfs-release-artifacts/manifests/manifest.yml \
           --vars-store smoke-test-vars.yml \
@@ -179,6 +230,8 @@ runs:
         cd deployment-source-config
         source source_file.yml
         cd ..
+        
+        echo "Running rootfs smoke tests..."
         bosh -d rootfs-smoke-test run-errand smoke-tests
 
     - name: Deploy CF
@@ -188,6 +241,8 @@ runs:
         set -euo pipefail
         cd deployment-source-config
         source source_file.yml
+        
+        echo "Deploying Cloud Foundry..."
         bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
           --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
           --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
@@ -195,8 +250,8 @@ runs:
           --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
           --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
           --ops-file ../buildpacks-opsfile/use-latest-buildpack-releases.yml \
-          --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
-          --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
           --var system_domain='${{ inputs.system_domain }}' \
-          --vars-store cf-vars.yml
+          --vars-store cf-vars.yml \
+          --non-interactive
+
         echo "success=true" >> $GITHUB_OUTPUT
