@@ -133,26 +133,43 @@ runs:
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
-          # Download the golang blob from the official golang release
+          # Try to download the golang blob from multiple sources
           echo "Downloading golang blob..."
-          wget -O "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
-            "https://github.com/cloudfoundry/bosh-package-golang-release/releases/download/v1.0.151/golang-1-linux-28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9.tgz" || \
-            curl -L -o "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
-            "https://storage.googleapis.com/golang-release-blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
+          GOLANG_BLOB="blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
           
-          if [[ ! -f "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" ]]; then
-            echo "Failed to download golang blob, trying alternative source..."
-            # Try to get it from the golang release directly
-            wget -O golang-1-linux.tgz "https://github.com/cloudfoundry/bosh-package-golang-release/releases/latest/download/golang-1-linux.tgz"
-            tar -xzf golang-1-linux.tgz
-            cp golang-1-linux "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
+          # Try different sources for the golang blob
+          wget -O "$GOLANG_BLOB" "https://github.com/cloudfoundry/golang-release/releases/download/v0.151.0/golang-1-linux-28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" || \
+          curl -L -o "$GOLANG_BLOB" "https://storage.googleapis.com/cf-deployment-compiled-releases/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" || \
+          wget -O "$GOLANG_BLOB" "https://bosh.io/d/github.com/cloudfoundry/golang-release?v=0.151.0" || \
+          echo "Could not download golang blob, will try to create minimal release"
+          
+          # Check if we got a proper golang blob (should be much larger than 133 bytes)
+          if [[ -f "$GOLANG_BLOB" ]] && [[ $(stat -c%s "$GOLANG_BLOB") -lt 1000 ]]; then
+            echo "Golang blob download failed (file too small), removing and continuing without it"
+            rm -f "$GOLANG_BLOB"
           fi
           
-          # Remove original blobs config to avoid sync attempts
-          if [[ -f "config/blobs.yml" ]]; then
-            rm config/blobs.yml
-            echo "Removed original blobs.yml"
+          # Create a new blobs.yml with our available blobs
+          cat > config/blobs.yml << EOF
+        rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
+          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
+          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
+        rootfs/${{ inputs.stack }}.tar.gz:
+          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}.tar.gz")
+          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
+        EOF
+          
+          # Add golang blob to blobs.yml if we have it
+          if [[ -f "$GOLANG_BLOB" ]] && [[ $(stat -c%s "$GOLANG_BLOB") -gt 1000 ]]; then
+            cat >> config/blobs.yml << EOF
+        golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
+          size: $(stat -c%s "$GOLANG_BLOB")
+          sha: $(sha1sum "$GOLANG_BLOB" | cut -d' ' -f1)
+        EOF
           fi
+          
+          echo "Created new blobs.yml:"
+          cat config/blobs.yml
           
           echo "Contents of blobs directory:"
           find blobs -type f -exec ls -la {} \;
