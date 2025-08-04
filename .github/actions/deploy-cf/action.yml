@@ -127,46 +127,48 @@ runs:
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
           echo "Found rootfs tarball, copying to blobs directory"
           mkdir -p blobs/rootfs
+          mkdir -p blobs/golang-1-linux
           
-          # Copy with the original versioned filename (the packaging spec expects this pattern)
+          # Copy rootfs with the versioned filename
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
-          
-          # Also create a link/copy with the generic name for compatibility
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
-          # Backup original blobs config to avoid sync issues
-          if [[ -f "config/blobs.yml" ]]; then
-            cp "config/blobs.yml" "config/blobs.yml.backup"
-            echo "Backed up original blobs.yml"
+          # Download the golang blob from the official golang release
+          echo "Downloading golang blob..."
+          wget -O "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
+            "https://github.com/cloudfoundry/bosh-package-golang-release/releases/download/v1.0.151/golang-1-linux-28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9.tgz" || \
+            curl -L -o "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
+            "https://storage.googleapis.com/golang-release-blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
+          
+          if [[ ! -f "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" ]]; then
+            echo "Failed to download golang blob, trying alternative source..."
+            # Try to get it from the golang release directly
+            wget -O golang-1-linux.tgz "https://github.com/cloudfoundry/bosh-package-golang-release/releases/latest/download/golang-1-linux.tgz"
+            tar -xzf golang-1-linux.tgz
+            cp golang-1-linux "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
           fi
           
-          # Create a new blobs.yml with both filenames to be safe
-          cat > config/blobs.yml << EOF
-        rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
-          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
-          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
-        rootfs/${{ inputs.stack }}.tar.gz:
-          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}.tar.gz")
-          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
-        EOF
+          # Remove original blobs config to avoid sync attempts
+          if [[ -f "config/blobs.yml" ]]; then
+            rm config/blobs.yml
+            echo "Removed original blobs.yml"
+          fi
           
-          echo "Created new blobs.yml with local rootfs:"
-          cat config/blobs.yml
+          echo "Contents of blobs directory:"
+          find blobs -type f -exec ls -la {} \;
           
-          echo "Contents of blobs/rootfs directory:"
-          ls -la blobs/rootfs/
-          
-          # Create release without syncing (using local blobs only)
-          echo "Creating release with local blobs..."
-          bosh create-release --force --tarball="../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz"
+          # Create release as dev version (bypasses blobstore entirely)
+          echo "Creating development release..."
+          bosh create-release --force --version="dev-$(date +%s)" --tarball="../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz"
           
           # Create ops file for this dev release
+          DEV_VERSION="dev-$(date +%s)"
           cat > ../rootfs-release-artifacts/use-dev-release-opsfile.yml << EOF
         - type: replace
           path: /releases/name=${{ inputs.stack }}?
           value:
             name: ${{ inputs.stack }}
-            version: create
+            version: "$DEV_VERSION"
             url: file://\$(pwd)/rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
         EOF
         else
