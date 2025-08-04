@@ -87,7 +87,6 @@ runs:
         
         echo "Setting up local blobs directory..."
         mkdir -p blobs/rootfs
-        mkdir -p blobs/golang-1-linux
         
         # Copy the rootfs we already downloaded to the blobs directory
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
@@ -95,31 +94,6 @@ runs:
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
           echo "Rootfs blob prepared"
         fi
-        
-        # Download the Go version and files that match the spec
-        echo "Downloading golang files to match spec..."
-        cd blobs/golang-1-linux
-        
-        # Download Go 1.24 (latest) that matches go1.24*.linux-amd64.tar.gz pattern
-        curl -L -o "go1.24.0.linux-amd64.tar.gz" \
-          "https://go.dev/dl/go1.24.0.linux-amd64.tar.gz" || \
-        curl -L -o "go1.24.0.linux-amd64.tar.gz" \
-          "https://golang.org/dl/go1.24.0.linux-amd64.tar.gz"
-        
-        # Create the environment files the spec expects
-        cat > compile.env.unix << 'EOF'
-        export GOROOT=$BOSH_INSTALL_TARGET
-        export PATH=$GOROOT/bin:$PATH
-        EOF
-        
-        cat > runtime.env.unix << 'EOF'
-        export GOROOT=$BOSH_INSTALL_TARGET
-        export PATH=$GOROOT/bin:$PATH
-        EOF
-        
-        cd ../..
-        echo "Golang blobs prepared successfully"
-        ls -la blobs/*/
 
     - name: Get GCP stemcell
       shell: bash
@@ -146,46 +120,43 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
-    - name: Debug release structure  
-      shell: bash
-      run: |
-        cd ${{ inputs.stack }}-release
-        echo "=== Available packages ==="
-        ls -la packages/
-        echo "=== Package specs ==="
-        find packages -name "spec" -exec echo "=== {} ===" \; -exec cat {} \;
-        echo "=== Current blobs.yml ==="
-        cat config/blobs.yml
-
-    - name: Get original golang package spec  
+    - name: Remove golang dependency completely
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
         
-        echo "🔍 Looking for original golang package with fingerprint 28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
+        echo "🔧 Removing golang dependency from rootfs-certsplitter..."
         
-        # Try to get the original golang package spec from golang-release repo
-        echo "Downloading original golang package spec..."
-        curl -s "https://raw.githubusercontent.com/bosh-packages/golang-release/main/packages/golang-1-linux/spec" \
-          -o packages/golang-1-linux/spec || \
-        curl -s "https://raw.githubusercontent.com/cloudfoundry/golang-release/main/packages/golang-1-linux/spec" \
-          -o packages/golang-1-linux/spec || \
-        echo "Could not download original spec, using minimal spec"
-        
-        # If download failed, create minimal spec that should match the fingerprint
-        if [[ ! -s packages/golang-1-linux/spec ]]; then
-          echo "Creating spec that matches expected fingerprint..."
-          cat > packages/golang-1-linux/spec << 'EOF'
+        # Update rootfs-certsplitter spec to remove golang dependency
+        cat > packages/rootfs-certsplitter/spec << 'EOF'
         ---
-        name: golang-1-linux
-        dependencies: []
+        name: rootfs-certsplitter-cflinuxfs5
         files:
-        - golang-1-linux/*.tar.gz
+          - code.cloudfoundry.org/certsplitter/**/*
         EOF
-        fi
         
-        echo "✅ Golang package spec:"
-        cat packages/golang-1-linux/spec
+        # Create a simple packaging script that doesn't need golang
+        cat > packages/rootfs-certsplitter/packaging << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # Copy the certsplitter binary directly (if it exists)
+        if [[ -f code.cloudfoundry.org/certsplitter/bin/certsplitter ]]; then
+            mkdir -p $BOSH_INSTALL_TARGET/bin
+            cp code.cloudfoundry.org/certsplitter/bin/certsplitter $BOSH_INSTALL_TARGET/bin/
+            chmod +x $BOSH_INSTALL_TARGET/bin/certsplitter
+        else
+            echo "ERROR: certsplitter binary not found"
+            exit 1
+        fi
+        EOF
+        
+        chmod +x packages/rootfs-certsplitter/packaging
+        
+        # Remove golang package entirely
+        rm -rf packages/golang-1-linux
+        
+        echo "✅ Golang dependency removed"
 
     - name: Configure local-only blobs
       shell: bash
@@ -195,55 +166,16 @@ runs:
         echo "Backing up original blobs.yml..."
         cp config/blobs.yml config/blobs.yml.backup
         
-        echo "Creating local-only blobs.yml (no remote blobs)..."
+        echo "Creating rootfs-only blobs.yml..."
         cat > config/blobs.yml << EOF
         ---
-        golang-1-linux/compile.env.unix:
-          size: $(stat -c%s "blobs/golang-1-linux/compile.env.unix")
-          sha: $(sha1sum "blobs/golang-1-linux/compile.env.unix" | cut -d' ' -f1)
-        golang-1-linux/runtime.env.unix:
-          size: $(stat -c%s "blobs/golang-1-linux/runtime.env.unix")  
-          sha: $(sha1sum "blobs/golang-1-linux/runtime.env.unix" | cut -d' ' -f1)
-        golang-1-linux/go1.24.0.linux-amd64.tar.gz:
-          size: $(stat -c%s "blobs/golang-1-linux/go1.24.0.linux-amd64.tar.gz")
-          sha: $(sha1sum "blobs/golang-1-linux/go1.24.0.linux-amd64.tar.gz" | cut -d' ' -f1)
         rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
           sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
         EOF
         
-        echo "Local-only blobs.yml created:"
+        echo "Rootfs-only blobs.yml created:"
         cat config/blobs.yml
-
-    - name: Debug package fingerprints
-      shell: bash
-      run: |
-        cd ${{ inputs.stack }}-release
-        
-        echo "=== Calculating current package fingerprints ==="
-        echo "Current golang spec:"
-        cat packages/golang-1-linux/spec
-        
-        echo "Current rootfs-certsplitter spec:"  
-        cat packages/rootfs-certsplitter/spec
-        
-        echo "=== BOSH package fingerprint calculation ==="
-        bosh create-release --dry-run --force || echo "Dry run failed, showing error context"
-
-    - name: Check package usage in jobs
-      shell: bash
-      run: |
-        cd ${{ inputs.stack }}-release
-        echo "=== Checking which jobs use golang or rootfs-certsplitter ==="
-        
-        echo "Jobs that reference golang:"
-        grep -r "golang" jobs/ || echo "No golang references in jobs"
-        
-        echo "Jobs that reference rootfs-certsplitter:"  
-        grep -r "rootfs-certsplitter" jobs/ || echo "No rootfs-certsplitter references in jobs"
-        
-        echo "=== All job specs ==="
-        find jobs -name "spec" -exec echo "=== {} ===" \; -exec cat {} \;
 
     - name: Overwrite rootfs release
       shell: bash
@@ -253,38 +185,8 @@ runs:
         mkdir -p ../rootfs-release-artifacts
         cd ../${{ inputs.stack }}-release
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
-          echo "Using local blobs only, skipping bosh sync-blobs..."
-          
-          # NUCLEAR OPTION - Remove ALL cached state including final builds
-          echo "Removing ALL cached BOSH state..."
-          rm -rf .blobs_cache/ || true
-          rm -rf .dev_builds/ || true
-          rm -rf dev_releases/ || true
-          rm -rf .final_builds/ || true
-          rm -rf releases/ || true
-          rm -rf .bosh/ || true
-          
-          # Force regenerate package specs to use local blobs
-          echo "Forcing package fingerprint recalculation..."
-          find packages -name "packaging" -delete || true
-          
-          # Create minimal packaging scripts if they don't exist
-          for pkg in packages/*/; do
-            if [[ ! -f "$pkg/packaging" ]]; then
-              echo "#!/bin/bash" > "$pkg/packaging"
-              echo "set -e" >> "$pkg/packaging"
-              if [[ "$pkg" == *"golang"* ]]; then
-                echo "cp -a * \$BOSH_INSTALL_TARGET/" >> "$pkg/packaging"
-              else
-                echo "cp -a * \$BOSH_INSTALL_TARGET/" >> "$pkg/packaging"
-              fi
-              chmod +x "$pkg/packaging"
-            fi
-          done
-          
-          # Force completely clean release build with local blobs
           echo "Creating release with local blobs..."
-          BOSH_LOG_LEVEL=debug bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
+          bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
         fi
 
     - name: Upload ubuntu-noble stemcell
@@ -301,7 +203,7 @@ runs:
         cd deployment-source-config
         source source_file.yml
         cd ..
-        bosh upload-release rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz --non-interactive
+        bosh upload-release rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz --non-interactive
 
     - name: Create CAPI release with rootfs
       shell: bash
