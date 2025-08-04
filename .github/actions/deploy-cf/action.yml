@@ -218,6 +218,8 @@ runs:
             ls -la blobs/*/
           fi
           
+          # Force clean release build with recalculated fingerprints
+          echo "Creating clean release with recalculated package fingerprints..."
           bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
         fi
 
