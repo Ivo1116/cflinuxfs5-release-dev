@@ -96,14 +96,29 @@ runs:
           echo "Rootfs blob prepared"
         fi
         
-        # Download golang blob from the official Go releases
-        echo "Downloading golang blob..."
-        curl -L -o "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
-          "https://go.dev/dl/go1.21.8.linux-amd64.tar.gz" || \
-        curl -L -o "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" \
-          "https://golang.org/dl/go1.21.8.linux-amd64.tar.gz"
+        # Download the Go version and files that match the spec
+        echo "Downloading golang files to match spec..."
+        cd blobs/golang-1-linux
         
-        echo "Local blobs prepared successfully"
+        # Download Go 1.24 (latest) that matches go1.24*.linux-amd64.tar.gz pattern
+        curl -L -o "go1.24.0.linux-amd64.tar.gz" \
+          "https://go.dev/dl/go1.24.0.linux-amd64.tar.gz" || \
+        curl -L -o "go1.24.0.linux-amd64.tar.gz" \
+          "https://golang.org/dl/go1.24.0.linux-amd64.tar.gz"
+        
+        # Create the environment files the spec expects
+        cat > compile.env.unix << 'EOF'
+        export GOROOT=$BOSH_INSTALL_TARGET
+        export PATH=$GOROOT/bin:$PATH
+        EOF
+        
+        cat > runtime.env.unix << 'EOF'
+        export GOROOT=$BOSH_INSTALL_TARGET
+        export PATH=$GOROOT/bin:$PATH
+        EOF
+        
+        cd ../..
+        echo "Golang blobs prepared successfully"
         ls -la blobs/*/
 
     - name: Get GCP stemcell
