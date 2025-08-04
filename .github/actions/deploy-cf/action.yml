@@ -118,7 +118,7 @@ runs:
         echo "=== Looking for rootfs tarball ==="
         find . -name "*${{ inputs.stack }}*${{ inputs.version }}*" -type f || echo "No rootfs files found"
 
-    - name: Create rootfs release (rootfs-only)
+    - name: Create rootfs release (complete cleanup)
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
@@ -132,26 +132,49 @@ runs:
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
-          # Remove packages that depend on golang
-          echo "Modifying release to remove golang dependencies..."
+          echo "=== Original release structure ==="
+          echo "Packages:"
+          ls -la packages/ || echo "No packages directory"
+          echo "Jobs:"
+          ls -la jobs/ || echo "No jobs directory"
+          
+          # First, identify and remove all packages that depend on golang
+          echo "=== Removing golang-dependent packages ==="
+          GOLANG_PACKAGES=""
           if [[ -d "packages" ]]; then
-            # Find packages that depend on golang and remove them
             for pkg_dir in packages/*/; do
-              if [[ -f "$pkg_dir/spec" ]] && grep -q "golang-1-linux" "$pkg_dir/spec"; then
+              if [[ -f "$pkg_dir/spec" ]] && (grep -q "golang-1-linux" "$pkg_dir/spec" || grep -q "golang" "$pkg_dir/spec"); then
                 pkg_name=$(basename "$pkg_dir")
-                echo "Removing package $pkg_name (depends on golang)"
+                echo "Found golang-dependent package: $pkg_name"
+                GOLANG_PACKAGES="$GOLANG_PACKAGES $pkg_name"
                 rm -rf "$pkg_dir"
+                echo "Removed package: $pkg_name"
               fi
             done
           fi
           
-          # Modify jobs to remove golang package dependencies
+          echo "Golang-dependent packages removed: $GOLANG_PACKAGES"
+          
+          # Now update all job specs to remove references to these packages
+          echo "=== Updating job specifications ==="
           if [[ -d "jobs" ]]; then
             for job_dir in jobs/*/; do
+              job_name=$(basename "$job_dir")
               if [[ -f "$job_dir/spec" ]]; then
-                # Remove golang package references from job specs
+                echo "Processing job: $job_name"
+                
+                # Remove golang package references
                 sed -i '/golang-1-linux/d' "$job_dir/spec" || true
-                echo "Cleaned job $(basename "$job_dir") spec"
+                
+                # Remove references to packages we deleted
+                for pkg in $GOLANG_PACKAGES; do
+                  sed -i "/- $pkg/d" "$job_dir/spec" || true
+                  sed -i "/$pkg/d" "$job_dir/spec" || true
+                done
+                
+                echo "Updated job spec for: $job_name"
+                echo "Current packages in $job_name spec:"
+                grep -A 20 "packages:" "$job_dir/spec" || echo "No packages section found"
               fi
             done
           fi
@@ -165,6 +188,12 @@ runs:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}.tar.gz")
           sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
         EOF
+          
+          echo "=== Final release structure ==="
+          echo "Remaining packages:"
+          ls -la packages/ || echo "No packages directory"
+          echo "Jobs:"
+          ls -la jobs/ || echo "No jobs directory"
           
           echo "Created new blobs.yml:"
           cat config/blobs.yml
