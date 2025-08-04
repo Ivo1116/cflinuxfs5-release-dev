@@ -129,10 +129,24 @@ runs:
           mkdir -p blobs/rootfs
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
-          # Try to sync blobs (may fail if blobstore not configured, that's ok)
-          bosh sync-blobs || echo "Warning: Could not sync blobs, continuing anyway"
+          # Backup original blobs config to avoid sync issues
+          if [[ -f "config/blobs.yml" ]]; then
+            cp "config/blobs.yml" "config/blobs.yml.backup"
+            echo "Backed up original blobs.yml"
+          fi
           
-          # Create release
+          # Create a new blobs.yml with only our local rootfs blob
+          cat > config/blobs.yml << EOF
+        rootfs/${{ inputs.stack }}.tar.gz:
+          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}.tar.gz")
+          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
+        EOF
+          
+          echo "Created new blobs.yml with local rootfs:"
+          cat config/blobs.yml
+          
+          # Create release without syncing (using local blobs only)
+          echo "Creating release with local blobs..."
           bosh create-release --force --tarball="../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz"
           
           # Create ops file for this dev release
