@@ -131,6 +131,28 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
+    - name: Configure local-only blobs
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        
+        echo "Backing up original blobs.yml..."
+        cp config/blobs.yml config/blobs.yml.backup
+        
+        echo "Creating local-only blobs.yml..."
+        cat > config/blobs.yml << EOF
+        ---
+        golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
+          size: $(stat -c%s "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9")
+          sha: fd914ce7543010ba6f6664df8f80817d07c98eb6b7de17da1dd9f2fceb79485c
+        rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
+          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
+          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
+        EOF
+        
+        echo "Local-only blobs.yml created:"
+        cat config/blobs.yml
+
     - name: Overwrite rootfs release
       shell: bash
       run: |
