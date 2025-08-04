@@ -120,43 +120,31 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
-    - name: Remove golang dependency completely
+    - name: Fix rootfs-certsplitter packaging
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
         
-        echo "🔧 Removing golang dependency from rootfs-certsplitter..."
+        echo "🔧 Fixing rootfs-certsplitter to compile from source..."
         
-        # Update rootfs-certsplitter spec to remove golang dependency
-        cat > packages/rootfs-certsplitter/spec << 'EOF'
-        ---
-        name: rootfs-certsplitter-cflinuxfs5
-        files:
-          - code.cloudfoundry.org/certsplitter/**/*
-        EOF
-        
-        # Create a simple packaging script that doesn't need golang
+        # Update packaging script to compile certsplitter
         cat > packages/rootfs-certsplitter/packaging << 'EOF'
         #!/bin/bash
         set -e
         
-        # Copy the certsplitter binary directly (if it exists)
-        if [[ -f code.cloudfoundry.org/certsplitter/bin/certsplitter ]]; then
-            mkdir -p $BOSH_INSTALL_TARGET/bin
-            cp code.cloudfoundry.org/certsplitter/bin/certsplitter $BOSH_INSTALL_TARGET/bin/
-            chmod +x $BOSH_INSTALL_TARGET/bin/certsplitter
-        else
-            echo "ERROR: certsplitter binary not found"
-            exit 1
-        fi
+        source /var/vcap/packages/golang-1-linux/bosh/compile.env
+        
+        mkdir -p $BOSH_INSTALL_TARGET/bin
+        
+        # Compile certsplitter
+        cd code.cloudfoundry.org/certsplitter
+        go build -o $BOSH_INSTALL_TARGET/bin/certsplitter ./cmd/certsplitter
+        
+        chmod +x $BOSH_INSTALL_TARGET/bin/certsplitter
         EOF
         
         chmod +x packages/rootfs-certsplitter/packaging
-        
-        # Remove golang package entirely
-        rm -rf packages/golang-1-linux
-        
-        echo "✅ Golang dependency removed"
+        echo "✅ Fixed rootfs-certsplitter packaging"
 
     - name: Configure local-only blobs
       shell: bash
