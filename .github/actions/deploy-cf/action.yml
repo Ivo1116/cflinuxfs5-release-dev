@@ -131,6 +131,15 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
+    - name: Debug golang package requirements
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        echo "=== Full golang package spec ==="
+        cat packages/golang-1-linux/spec
+        echo "=== Files golang package expects ==="
+        grep -A 10 "files:" packages/golang-1-linux/spec || echo "No files section found"
+
     - name: Configure local-only blobs
       shell: bash
       run: |
