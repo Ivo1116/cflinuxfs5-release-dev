@@ -127,6 +127,11 @@ runs:
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
           echo "Found rootfs tarball, copying to blobs directory"
           mkdir -p blobs/rootfs
+          
+          # Copy with the original versioned filename (the packaging spec expects this pattern)
+          cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
+          
+          # Also create a link/copy with the generic name for compatibility
           cp "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" "blobs/rootfs/${{ inputs.stack }}.tar.gz"
           
           # Backup original blobs config to avoid sync issues
@@ -135,8 +140,11 @@ runs:
             echo "Backed up original blobs.yml"
           fi
           
-          # Create a new blobs.yml with only our local rootfs blob
+          # Create a new blobs.yml with both filenames to be safe
           cat > config/blobs.yml << EOF
+        rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
+          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
+          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
         rootfs/${{ inputs.stack }}.tar.gz:
           size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}.tar.gz")
           sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}.tar.gz" | cut -d' ' -f1)
@@ -144,6 +152,9 @@ runs:
           
           echo "Created new blobs.yml with local rootfs:"
           cat config/blobs.yml
+          
+          echo "Contents of blobs/rootfs directory:"
+          ls -la blobs/rootfs/
           
           # Create release without syncing (using local blobs only)
           echo "Creating release with local blobs..."
