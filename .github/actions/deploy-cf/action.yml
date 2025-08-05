@@ -131,9 +131,12 @@ runs:
         if [[ -f "../rootfs-artifacts/cflinuxfs5-1.0.0-rc.1.tar.gz" ]]; then
           echo "Setting up local blobs (skipping sync-blobs)..."
 
+          # Make sure the expected golang blob exists
+          cp blobs/golang-1-linux/go1.21.8.linux-amd64.tar.gz blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+
         cat > config/blobs.yml << 'EOF'
         ---
-        golang-1-linux/go1.21.8.linux-amd64.tar.gz:
+        golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
           size: GOLANG_SIZE
           sha: GOLANG_SHA
         rootfs/ROOTFS_FILE:
@@ -141,9 +144,8 @@ runs:
           sha: ROOTFS_SHA
         EOF
 
-          # Replace placeholders with actual values
-          GOLANG_SIZE=$(stat -c%s "blobs/golang-1-linux/go1.21.8.linux-amd64.tar.gz")
-          GOLANG_SHA=$(sha1sum "blobs/golang-1-linux/go1.21.8.linux-amd64.tar.gz" | cut -d' ' -f1)
+          GOLANG_SIZE=$(stat -c%s "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9")
+          GOLANG_SHA=$(sha1sum "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" | cut -d' ' -f1)
           ROOTFS_SIZE=$(stat -c%s "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz")
           ROOTFS_SHA=$(sha1sum "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz" | cut -d' ' -f1)
 
