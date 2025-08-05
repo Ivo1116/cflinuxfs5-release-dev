@@ -146,6 +146,37 @@ runs:
         chmod +x packages/rootfs-certsplitter/packaging
         echo "✅ Fixed rootfs-certsplitter packaging"
 
+    - name: Restore golang dependency and blob
+      shell: bash
+      run: |
+        cd ${{ inputs.stack }}-release
+        
+        echo "🔧 Restoring golang dependency..."
+        
+        # Restore rootfs-certsplitter spec with golang dependency
+        cat > packages/rootfs-certsplitter/spec << 'EOF'
+        ---
+        name: rootfs-certsplitter-cflinuxfs5
+        dependencies:
+          - golang-1-linux
+        files:
+          - code.cloudfoundry.org/certsplitter/**/*
+        EOF
+        
+        # Update blobs.yml to include golang
+        cat > config/blobs.yml << EOF
+        ---
+        golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9: 
+          object_id: golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+          sha: fd914ce7543010ba6f6664df8f80817d07c98eb6b7de17da1dd9f2fceb79485c
+          size: 12345678
+        rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz:
+          size: $(stat -c%s "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz")
+          sha: $(sha1sum "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" | cut -d' ' -f1)
+        EOF
+        
+        echo "✅ Golang dependency restored"
+
     - name: Configure local-only blobs
       shell: bash
       run: |
