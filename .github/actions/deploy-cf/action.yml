@@ -132,21 +132,20 @@ runs:
         if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
           echo "Setting up local blobs (skipping sync-blobs)..."
 
-          # Generate blobs.yml with correct sha/size (no object_id)
           GOLANG_SIZE=$(stat -c%s "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9")
           GOLANG_SHA=$(sha1sum "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" | cut -d' ' -f1)
           ROOTFS_SIZE=$(stat -c%s "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz")
           ROOTFS_SHA=$(sha1sum "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz" | cut -d' ' -f1)
 
           cat > config/blobs.yml <<EOF
----
-golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
-  size: $GOLANG_SIZE
-  sha: $GOLANG_SHA
-rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz:
-  size: $ROOTFS_SIZE
-  sha: $ROOTFS_SHA
-EOF
+    ---
+    golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:
+      size: $GOLANG_SIZE
+      sha: $GOLANG_SHA
+    rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz:
+      size: $ROOTFS_SIZE
+      sha: $ROOTFS_SHA
+    EOF
 
           echo "Creating release with local blobs only..."
           bosh create-release --force --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz
