@@ -163,6 +163,12 @@ runs:
           echo "DEBUG: Showing spec"
           cat packages/golang-1-linux/spec
 
+          echo '#!/bin/bash
+          set -e
+          tar -C $BOSH_INSTALL_TARGET -xzf $(dirname $0)/../../blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+          ' > packages/golang-1-linux/packaging
+          chmod +x packages/golang-1-linux/packaging
+
           echo "DEBUG: Showing spec (with line numbers)"
           cat -n packages/golang-1-linux/spec
           echo "DEBUG: Showing spec (with hex)"
