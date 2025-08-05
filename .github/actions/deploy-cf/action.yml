@@ -80,11 +80,21 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
-    - name: Download golang blob from official blobstore
+    - name: Download golang and setup blobs
       shell: bash
       run: |
+        cd ${{ inputs.stack }}-release
         mkdir -p blobs/golang-1-linux
-        aws s3 cp s3://bosh-package-golang-release/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+        mkdir -p blobs/rootfs
+        
+        # Copy rootfs from download step
+        cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz blobs/rootfs/
+        
+        # Download Go from official source instead of restricted S3
+        curl -L -o blobs/golang-1-linux/go1.21.8.linux-amd64.tar.gz https://go.dev/dl/go1.21.8.linux-amd64.tar.gz
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
     - name: Get GCP stemcell
       shell: bash
