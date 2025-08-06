@@ -201,13 +201,12 @@ runs:
         cd deployment-source-config
         source source_file.yml
         cd ..
-        # Check if the release already exists in the BOSH director
-        if bosh releases | grep -q "${{ inputs.stack }}/0+dev.1"; then
-          echo "Release ${{ inputs.stack }}/0+dev.1 already exists. Deleting it to upload the new version..."
-          bosh delete-release ${{ inputs.stack }}/0+dev.1 --force --non-interactive
-        else
-          echo "Release ${{ inputs.stack }}/0+dev.1 not found. Proceeding with upload."
-        fi
+        # Debug: Print the list of releases to understand the format
+        echo "DEBUG: Listing all releases in BOSH director..."
+        bosh releases
+        # Attempt to delete the release regardless of detection to ensure no conflict
+        echo "Attempting to delete release ${{ inputs.stack }}/0+dev.1 if it exists..."
+        bosh delete-release ${{ inputs.stack }}/0+dev.1 --force --non-interactive || echo "Release deletion failed or release not found, proceeding anyway."
         # Upload the new release
         echo "Uploading release ${{ inputs.stack }}/0+dev.1..."
         bosh upload-release rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz --non-interactive
