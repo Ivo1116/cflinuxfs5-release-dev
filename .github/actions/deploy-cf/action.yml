@@ -213,6 +213,9 @@ runs:
         # Upload the new release
         echo "Uploading release ${{ inputs.stack }}/0+dev.1..."
         bosh upload-release rootfs-release-artifacts/${{ inputs.stack }}-dev.tgz --non-interactive
+        # Debug: Inspect the uploaded release for blobs
+        echo "DEBUG: Inspecting uploaded release ${{ inputs.stack }}/0+dev.1..."
+        bosh inspect-release ${{ inputs.stack }}/0+dev.1 | grep "golang-1-linux" || echo "WARNING: golang-1-linux blob not found in uploaded release!"
       env:
         AWS_DEFAULT_REGION: us-east-1
         AWS_REGION: us-east-1
@@ -222,6 +225,14 @@ runs:
         BUILDPACKS_ENVS_DEPLOY_KEY: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
         BBL_STATE_DEPLOY_KEY: ${{ env.BBL_STATE_DEPLOY_KEY }}
         CFLINUXFS5_TOKEN: ${{ env.CFLINUXFS5_TOKEN }}
+
+    - name: Debug golang-1-linux packaging script
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd ${{ inputs.stack }}-release
+        echo "DEBUG: Content of golang-1-linux packaging script..."
+        cat packages/golang-1-linux/packaging || echo "ERROR: packaging script not found!"
 
     - name: Create CAPI release with rootfs
       shell: bash
