@@ -154,6 +154,8 @@ runs:
           # Clean any cached state
           rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
 
+          chmod +x packages/golang-1-linux/packaging
+
           # Debug output (optional)
           echo "DEBUG: Listing blobs/golang-1-linux/"
           ls -l blobs/golang-1-linux/
