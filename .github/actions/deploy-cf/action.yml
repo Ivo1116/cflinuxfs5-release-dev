@@ -156,9 +156,9 @@ runs:
 
           # Create the packaging script for golang-1-linux
           echo '#!/bin/bash
-    set -e
-    tar -C "$BOSH_INSTALL_TARGET" -xzf "$BOSH_COMPILE_TARGET/../../blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
-    ' > packages/golang-1-linux/packaging
+      set -e
+      tar -C "$BOSH_INSTALL_TARGET" -xzf "$BOSH_COMPILE_TARGET/../../blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
+      ' > packages/golang-1-linux/packaging
           chmod +x packages/golang-1-linux/packaging
 
           # Debug output (optional, can be removed for production)
