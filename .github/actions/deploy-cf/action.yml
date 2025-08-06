@@ -138,10 +138,12 @@ runs:
           mkdir -p blobs/rootfs
           cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz
 
-          GOLANG_SIZE=$(stat -c%s "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9")
-          GOLANG_SHA=$(sha1sum "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" | cut -d' ' -f1)
-          ROOTFS_SIZE=$(stat -c%s "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz")
-          ROOTFS_SHA=$(sha1sum "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz" | cut -d' ' -f1)
+          GOLANG_SIZE=$(stat -c%s blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9)
+          GOLANG_SHA=$(sha1sum blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 | cut -d' ' -f1)
+          ROOTFS_SIZE=$(stat -c%s blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz)
+          ROOTFS_SHA=$(sha1sum blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz | cut -d' ' -f1)
+
+          cat > config/blobs.yml <<EOF
 
           echo "---" > config/blobs.yml
           echo "golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:" >> config/blobs.yml
