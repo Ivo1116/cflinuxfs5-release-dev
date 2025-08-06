@@ -101,20 +101,39 @@ runs:
       run: |
         set -euo pipefail
         cd ${{ inputs.stack }}-release
-        echo "Updating packaging script for golang-1-linux to use dynamic blob path..."
+        echo "Updating packaging script for golang-1-linux to handle BOSH compilation environment..."
         echo "#!/bin/bash" > packages/golang-1-linux/packaging
         echo "set -euo pipefail" >> packages/golang-1-linux/packaging
-        echo "# Find the golang-1-linux blob dynamically in the blobs directory" >> packages/golang-1-linux/packaging
-        echo "BLOB_PATH=\$(find ./../../blobs/golang-1-linux/ -type f -name \"*.tar.gz\" | head -n 1)" >> packages/golang-1-linux/packaging
+        echo "# During BOSH compilation, blobs are available in the current directory" >> packages/golang-1-linux/packaging
+        echo "# Look for golang blob in multiple possible locations" >> packages/golang-1-linux/packaging
+        echo "BLOB_PATH=\"\"" >> packages/golang-1-linux/packaging
+        echo "# First try the BOSH compilation location (current directory)" >> packages/golang-1-linux/packaging
+        echo "if [[ -f \"28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9\" ]]; then" >> packages/golang-1-linux/packaging
+        echo "  BLOB_PATH=\"28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9\"" >> packages/golang-1-linux/packaging
+        echo "# Then try any *.tar.gz in current directory" >> packages/golang-1-linux/packaging
+        echo "elif [[ -n \"\$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)\" ]]; then" >> packages/golang-1-linux/packaging
+        echo "  BLOB_PATH=\$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)" >> packages/golang-1-linux/packaging
+        echo "# Finally try the original location" >> packages/golang-1-linux/packaging
+        echo "elif [[ -n \"\$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' 2>/dev/null | head -n 1)\" ]]; then" >> packages/golang-1-linux/packaging
+        echo "  BLOB_PATH=\$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' | head -n 1)" >> packages/golang-1-linux/packaging
+        echo "fi" >> packages/golang-1-linux/packaging
         echo "if [[ -z \"\$BLOB_PATH\" ]]; then" >> packages/golang-1-linux/packaging
-        echo "  echo \"ERROR: No golang-1-linux blob found in ./../../blobs/golang-1-linux/\"" >> packages/golang-1-linux/packaging
+        echo "  echo \"ERROR: No golang blob found in any expected location\"" >> packages/golang-1-linux/packaging
+        echo "  echo \"DEBUG: Contents of current directory:\"" >> packages/golang-1-linux/packaging
+        echo "  ls -la ." >> packages/golang-1-linux/packaging
+        echo "  echo \"DEBUG: Contents of blobs directory (if exists):\"" >> packages/golang-1-linux/packaging
+        echo "  ls -la ./../../blobs/golang-1-linux/ 2>/dev/null || echo \"Blobs directory not found\"" >> packages/golang-1-linux/packaging
         echo "  exit 1" >> packages/golang-1-linux/packaging
         echo "fi" >> packages/golang-1-linux/packaging
+        echo "echo \"Found blob at: \$BLOB_PATH\"" >> packages/golang-1-linux/packaging
         echo "echo \"Extracting \$BLOB_PATH to /var/vcap/packages/golang-1-linux...\"" >> packages/golang-1-linux/packaging
         echo "tar -C /var/vcap/packages/golang-1-linux -xzf \"\$BLOB_PATH\"" >> packages/golang-1-linux/packaging
         chmod +x packages/golang-1-linux/packaging
-        # Aggressively clear any cached state to ensure BOSH picks up the updated script
+        # More aggressive cache clearing
         rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
+        rm -f packages/golang-1-linux/spec.lock || true
+        # Force regeneration of package fingerprints
+        find packages/ -name "spec.lock" -delete || true
 
     - name: Get GCP stemcell
       shell: bash
@@ -254,6 +273,16 @@ runs:
         mkdir -p ../capi-release-artifacts
         cd ../capi-release
         bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
+
+    - name: Create ops file for CAPI dev release  
+      shell: bash
+      run: |
+        mkdir -p capi-release-artifacts
+        echo "- type: replace" > capi-release-artifacts/use-dev-release-opsfile.yml
+        echo "  path: /releases/-" >> capi-release-artifacts/use-dev-release-opsfile.yml
+        echo "  value:" >> capi-release-artifacts/use-dev-release-opsfile.yml  
+        echo "    name: capi" >> capi-release-artifacts/use-dev-release-opsfile.yml
+        echo "    version: 1.213.0+dev.1" >> capi-release-artifacts/use-dev-release-opsfile.yml
 
     - name: Use new buildpack BOSH releases
       shell: bash
