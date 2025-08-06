@@ -108,6 +108,26 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
+    - name: Update golang-1-linux packaging script safely
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd ${{ inputs.stack }}-release
+        echo "Updating packaging script for golang-1-linux to use dynamic blob path..."
+        echo "#!/bin/bash" > packages/golang-1-linux/packaging
+        echo "set -euo pipefail" >> packages/golang-1-linux/packaging
+        echo "# Find the golang-1-linux blob dynamically in the blobs directory" >> packages/golang-1-linux/packaging
+        echo "BLOB_PATH=\$(find ./../../blobs/golang-1-linux/ -type f -name \"*.tar.gz\" | head -n 1)" >> packages/golang-1-linux/packaging
+        echo "if [[ -z \"\$BLOB_PATH\" ]]; then" >> packages/golang-1-linux/packaging
+        echo "  echo \"ERROR: No golang-1-linux blob found in ./../../blobs/golang-1-linux/\"" >> packages/golang-1-linux/packaging
+        echo "  exit 1" >> packages/golang-1-linux/packaging
+        echo "fi" >> packages/golang-1-linux/packaging
+        echo "echo \"Extracting \$BLOB_PATH to /var/vcap/packages/golang-1-linux...\"" >> packages/golang-1-linux/packaging
+        echo "tar -C /var/vcap/packages/golang-1-linux -xzf \"\$BLOB_PATH\"" >> packages/golang-1-linux/packaging
+        chmod +x packages/golang-1-linux/packaging
+        echo "DEBUG: Updated packaging script content:"
+        cat packages/golang-1-linux/packaging
+
     - name: Get GCP stemcell
       shell: bash
       run: |
