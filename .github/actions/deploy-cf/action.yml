@@ -127,6 +127,9 @@ runs:
         chmod +x packages/golang-1-linux/packaging
         echo "DEBUG: Updated packaging script content:"
         cat packages/golang-1-linux/packaging
+        # Aggressively clear any cached state to ensure BOSH picks up the updated script
+        echo "Clearing all cached state to force BOSH to use updated script..."
+        rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
 
     - name: Get GCP stemcell
       shell: bash
@@ -223,7 +226,9 @@ runs:
           UNIQUE_VERSION="0+dev.$(date +%s)"
           echo "Using unique version $UNIQUE_VERSION to avoid package ID conflicts..."
           bosh create-release --force --version="$UNIQUE_VERSION" --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz
-          echo "DEBUG: Inspecting release tarball contents..."
+          echo "DEBUG: Inspecting release tarball contents for packaging script..."
+          tar -tvf ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz | grep "packages/golang-1-linux/packaging" || echo "WARNING: packaging script not found in release tarball!"
+          echo "DEBUG: Inspecting release tarball contents for golang-1-linux blob..."
           tar -tvf ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz | grep "golang-1-linux" || echo "WARNING: golang-1-linux blob not found in release tarball!"
           
           # Store the unique version for later steps
