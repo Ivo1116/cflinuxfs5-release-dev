@@ -154,14 +154,6 @@ runs:
           # Clean any cached state
           rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
 
-          # Create the packaging script for golang-1-linux
-          echo '#!/bin/bash
-          set -e
-          tar -C "$BOSH_INSTALL_TARGET" -xzf "$BOSH_COMPILE_TARGET/../../blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"
-          ' > packages/golang-1-linux/packaging
-            chmod +x packages/golang-1-linux/packaging
-
-          # Debug output (optional, can be removed for production)
           echo "DEBUG: Listing blobs/golang-1-linux/"
           ls -l blobs/golang-1-linux/
           echo "DEBUG: Listing blobs/rootfs/"
@@ -170,12 +162,36 @@ runs:
           cat config/blobs.yml
           echo "DEBUG: Showing spec"
           cat packages/golang-1-linux/spec
-          echo "DEBUG: Showing packaging script"
-          cat packages/golang-1-linux/packaging
 
+          echo '#!/bin/bash
+          set -e
+          tar -C $BOSH_INSTALL_TARGET -xzf $(dirname $0)/../../blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
+          ' > packages/golang-1-linux/packaging
+          chmod +x packages/golang-1-linux/packaging
+
+          echo "DEBUG: Showing spec (with line numbers)"
+          cat -n packages/golang-1-linux/spec
+          echo "DEBUG: Showing spec (with hex)"
+          xxd packages/golang-1-linux/spec || hexdump -C packages/golang-1-linux/spec
+          file packages/golang-1-linux/spec
+
+          echo "DEBUG: pwd"
+          pwd
+          echo "DEBUG: ls -l"
+          ls -l
+          echo "DEBUG: ls -l packages/golang-1-linux/"
+          ls -l packages/golang-1-linux/
+          echo "DEBUG: ls -l .dev_builds/packages/golang-1-linux/ || true"
+          ls -l .dev_builds/packages/golang-1-linux/ || true
+          echo "DEBUG: ls -l .final_builds/packages/golang-1-linux/ || true"
+          ls -l .final_builds/packages/golang-1-linux/ || true
+          echo "DEBUG: Deleting spec.lock"
+          rm -f packages/golang-1-linux/spec.lock
+
+          echo "Creating release with local blobs only..."
           DEV_VERSION="dev.$(date +%s)"
           bosh create-release --force --version="$DEV_VERSION" --tarball=../rootfs-release-artifacts/cflinuxfs5-$DEV_VERSION.tgz
-          echo "DEV_VERSION=$DEV_VERSION" >> $GITHUB_ENV
+                   
         fi
 
     - name: Upload ubuntu-noble stemcell
