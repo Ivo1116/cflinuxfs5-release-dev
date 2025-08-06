@@ -253,13 +253,11 @@ runs:
         set -euo pipefail
         mkdir -p rootfs-release-artifacts
         echo "Creating ops file for unique release version ${{ env.unique_version }}..."
-        cat > rootfs-release-artifacts/use-dev-release-opsfile.yml << EOF
-    - type: replace
-      path: /releases/-
-      value:
-        name: ${{ inputs.stack }}
-        version: ${{ env.unique_version }}
-          EOF
+        echo "- type: replace" > rootfs-release-artifacts/use-dev-release-opsfile.yml
+        echo "  path: /releases/-" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
+        echo "  value:" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
+        echo "    name: ${{ inputs.stack }}" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
+        echo "    version: ${{ env.unique_version }}" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
         echo "DEBUG: Content of use-dev-release-opsfile.yml:"
         cat rootfs-release-artifacts/use-dev-release-opsfile.yml
 
