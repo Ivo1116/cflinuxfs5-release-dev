@@ -88,6 +88,19 @@ runs:
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
 
+    - name: Download GCP ubuntu-noble stemcell
+      shell: bash
+      run: |
+        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent?v=1.25"
+
+    - name: Upload stemcell to BOSH
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        cd ..
+        bosh upload-stemcell gcp-stemcell.tgz --non-interactive
+
     - name: Prepare blobs
       shell: bash
       run: |
