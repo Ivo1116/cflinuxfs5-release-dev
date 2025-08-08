@@ -1,5 +1,5 @@
 name: 'Deploy CF'
-description: 'Deploy Cloud Foundry with new rootfs - equivalent to Concourse deploy job'
+description: 'Deploy Cloud Foundry with new rootfs'
 
 inputs:
   stack:
@@ -80,77 +80,49 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
-    - name: Download golang and setup blobs
+    - name: Prepare blobs
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
-        mkdir -p blobs/golang-1-linux
-        mkdir -p blobs/rootfs
+        mkdir -p blobs/golang-1-linux blobs/rootfs
+        cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
+           blobs/rootfs/cflinuxfs5-${{ inputs.version }}.tar.gz
 
-        # Copy rootfs from download step
-        cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz
+        # Download latest stable Go dynamically
+        LATEST_GO_URL=$(curl -s https://go.dev/dl/ | grep -oP 'https://go.dev/dl/go[0-9]+\.[0-9]+(\.[0-9]+)?\.linux-amd64\.tar\.gz' | head -n 1)
+        GO_FILENAME=$(basename "$LATEST_GO_URL")
+        curl -L -o "blobs/golang-1-linux/$GO_FILENAME" "$LATEST_GO_URL"
 
-        # Download Go from official source instead of restricted S3
-        curl -L -o blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 https://go.dev/dl/go1.21.8.linux-amd64.tar.gz
-      env:
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-
-    - name: Update golang-1-linux packaging script safely
+    - name: Update golang packaging script
       shell: bash
       run: |
+        cd ${{ inputs.stack }}-release
+        cat > packages/golang-1-linux/packaging <<'EOF'
+        #!/bin/bash
         set -euo pipefail
-        cd ${{ inputs.stack }}-release
-        echo "Updating packaging script for golang-1-linux to handle BOSH compilation environment..."
-        echo "#!/bin/bash" > packages/golang-1-linux/packaging
-        echo "set -euo pipefail" >> packages/golang-1-linux/packaging
-        echo "# During BOSH compilation, blobs are available in the current directory" >> packages/golang-1-linux/packaging
-        echo "# Look for golang blob in multiple possible locations" >> packages/golang-1-linux/packaging
-        echo "BLOB_PATH=\"\"" >> packages/golang-1-linux/packaging
-        echo "# First try the BOSH compilation location (current directory)" >> packages/golang-1-linux/packaging
-        echo "if [[ -f \"28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9\" ]]; then" >> packages/golang-1-linux/packaging
-        echo "  BLOB_PATH=\"28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9\"" >> packages/golang-1-linux/packaging
-        echo "# Then try any *.tar.gz in current directory" >> packages/golang-1-linux/packaging
-        echo "elif [[ -n \"\$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)\" ]]; then" >> packages/golang-1-linux/packaging
-        echo "  BLOB_PATH=\$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)" >> packages/golang-1-linux/packaging
-        echo "# Finally try the original location" >> packages/golang-1-linux/packaging
-        echo "elif [[ -n \"\$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' 2>/dev/null | head -n 1)\" ]]; then" >> packages/golang-1-linux/packaging
-        echo "  BLOB_PATH=\$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' | head -n 1)" >> packages/golang-1-linux/packaging
-        echo "fi" >> packages/golang-1-linux/packaging
-        echo "if [[ -z \"\$BLOB_PATH\" ]]; then" >> packages/golang-1-linux/packaging
-        echo "  echo \"ERROR: No golang blob found in any expected location\"" >> packages/golang-1-linux/packaging
-        echo "  echo \"DEBUG: Contents of current directory:\"" >> packages/golang-1-linux/packaging
-        echo "  ls -la ." >> packages/golang-1-linux/packaging
-        echo "  echo \"DEBUG: Contents of blobs directory (if exists):\"" >> packages/golang-1-linux/packaging
-        echo "  ls -la ./../../blobs/golang-1-linux/ 2>/dev/null || echo \"Blobs directory not found\"" >> packages/golang-1-linux/packaging
-        echo "  exit 1" >> packages/golang-1-linux/packaging
-        echo "fi" >> packages/golang-1-linux/packaging
-        echo "echo \"Found blob at: \$BLOB_PATH\"" >> packages/golang-1-linux/packaging
-        echo "echo \"Extracting \$BLOB_PATH to /var/vcap/packages/golang-1-linux...\"" >> packages/golang-1-linux/packaging
-        echo "tar -C /var/vcap/packages/golang-1-linux -xzf \"\$BLOB_PATH\"" >> packages/golang-1-linux/packaging
+        BLOB_PATH=""
+        if [[ -n "$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)" ]]; then
+          BLOB_PATH=$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)
+        elif [[ -n "$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' 2>/dev/null | head -n 1)" ]]; then
+          BLOB_PATH=$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' | head -n 1)
+        fi
+        if [[ -z "$BLOB_PATH" ]]; then
+          echo "ERROR: No golang blob found"
+          exit 1
+        fi
+        tar -C /var/vcap/packages/golang-1-linux -xzf "$BLOB_PATH"
+        EOF
         chmod +x packages/golang-1-linux/packaging
-        # More aggressive cache clearing
         rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
-        rm -f packages/golang-1-linux/spec.lock || true
-        # Force regeneration of package fingerprints
         find packages/ -name "spec.lock" -delete || true
-
-    - name: Get GCP stemcell
-      shell: bash
-      run: |
-        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
     - name: Install BBL & bosh
       shell: bash
       run: |
-        set -euo pipefail
         wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
-        chmod +x /tmp/bbl
-        sudo mv /tmp/bbl /usr/local/bin/bbl
-
+        chmod +x /tmp/bbl && sudo mv /tmp/bbl /usr/local/bin/bbl
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
-        chmod +x /tmp/bosh
-        sudo mv /tmp/bosh /usr/local/bin/bosh
+        chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
 
     - name: Create deployment source config
       shell: bash
@@ -160,143 +132,24 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
-    - name: Overwrite rootfs release
+    - name: Build and upload rootfs release
       shell: bash
       run: |
-        set -euo pipefail
-        cd buildpacks-ci
-        export STACK='${{ inputs.stack }}'
-        mkdir -p ../rootfs-release-artifacts
-        cd ../${{ inputs.stack }}-release
-
-        if [[ -f "../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" ]]; then
-          echo "Setting up local blobs (skipping sync-blobs)..."
-
-          mkdir -p blobs/golang-1-linux
-          if [[ ! -f "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" ]]; then
-            curl -L -o blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9 https://go.dev/dl/go1.21.8.linux-amd64.tar.gz
-          fi
-
-          mkdir -p blobs/rootfs
-          cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz
-
-          GOLANG_SIZE=$(stat -c%s "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9")
-          GOLANG_SHA=$(sha1sum "blobs/golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9" | cut -d' ' -f1)
-          ROOTFS_SIZE=$(stat -c%s "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz")
-          ROOTFS_SHA=$(sha1sum "blobs/rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz" | cut -d' ' -f1)
-
-          echo "---" > config/blobs.yml
-          echo "golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9:" >> config/blobs.yml
-          echo "  size: $GOLANG_SIZE" >> config/blobs.yml
-          echo "  sha: $GOLANG_SHA" >> config/blobs.yml
-          echo "rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz:" >> config/blobs.yml
-          echo "  size: $ROOTFS_SIZE" >> config/blobs.yml
-          echo "  sha: $ROOTFS_SHA" >> config/blobs.yml
-
-          # Clean any cached state aggressively
-          rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
-          rm -f packages/golang-1-linux/spec.lock || true
-
-          echo "Creating release with local blobs only and unique version..."
-          UNIQUE_VERSION="0+dev.$(date +%s)"
-          echo "Using unique version $UNIQUE_VERSION to avoid package ID conflicts..."
-          bosh create-release --force --version="$UNIQUE_VERSION" --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz
-          
-          # Store the unique version for later steps
-          echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
-        fi
-
-    - name: Upload ubuntu-noble stemcell
-      shell: bash
-      run: |
-        cd deployment-source-config
-        source source_file.yml
-        cd ..
-        bosh upload-stemcell gcp-stemcell.tgz --non-interactive
-
-    - name: Upload rootfs release to BOSH director
-      shell: bash
-      run: |
-        set -euo pipefail
-        cd deployment-source-config
-        source source_file.yml
-        cd ..
-        # Debug: Print the list of releases to understand the format
-        echo "DEBUG: Listing all releases in BOSH director..."
-        bosh releases
-        # Attempt to delete the release if it exists
-        echo "Attempting to delete release ${{ inputs.stack }}/${{ env.unique_version }} if it exists..."
-        bosh delete-release ${{ inputs.stack }}/${{ env.unique_version }} --force --non-interactive || echo "Release deletion failed or release not found, proceeding anyway."
-        # Upload the new release with unique version
-        echo "Uploading release ${{ inputs.stack }}/${{ env.unique_version }}..."
-        bosh upload-release rootfs-release-artifacts/${{ inputs.stack }}-dev-${{ env.unique_version }}.tgz --non-interactive
-        # Debug: Inspect the uploaded release for blobs
-        echo "DEBUG: Inspecting uploaded release ${{ inputs.stack }}/${{ env.unique_version }}..."
-        bosh inspect-release ${{ inputs.stack }}/${{ env.unique_version }} | grep "golang-1-linux" || echo "WARNING: golang-1-linux blob not found in uploaded release!"
-      env:
-        AWS_DEFAULT_REGION: us-east-1
-        AWS_REGION: us-east-1
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-        GCP_SERVICE_ACCOUNT_KEY: ${{ env.GCP_SERVICE_ACCOUNT_KEY }}
-        BUILDPACKS_ENVS_DEPLOY_KEY: ${{ env.BUILDPACKS_ENVS_DEPLOY_KEY }}
-        BBL_STATE_DEPLOY_KEY: ${{ env.BBL_STATE_DEPLOY_KEY }}
-        CFLINUXFS5_TOKEN: ${{ env.CFLINUXFS5_TOKEN }}
-
-    - name: Create ops file for unique rootfs release version
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p rootfs-release-artifacts
-        echo "Creating ops file for unique release version ${{ env.unique_version }}..."
-        echo "- type: replace" > rootfs-release-artifacts/use-dev-release-opsfile.yml
-        echo "  path: /releases/-" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
-        echo "  value:" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
-        echo "    name: ${{ inputs.stack }}" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
-        echo "    version: ${{ env.unique_version }}" >> rootfs-release-artifacts/use-dev-release-opsfile.yml
-        echo "DEBUG: Content of use-dev-release-opsfile.yml:"
-        cat rootfs-release-artifacts/use-dev-release-opsfile.yml
-
-    - name: Debug golang-1-linux packaging script
-      shell: bash
-      run: |
-        set -euo pipefail
         cd ${{ inputs.stack }}-release
-        echo "DEBUG: Content of golang-1-linux packaging script..."
-        cat packages/golang-1-linux/packaging || echo "ERROR: packaging script not found!"
+        UNIQUE_VERSION="0+dev.$(date +%s)"
+        bosh create-release --force --version="$UNIQUE_VERSION" \
+          --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz
+        cd ../deployment-source-config
+        source source_file.yml
+        bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
+        echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
 
-    - name: Create CAPI release with rootfs
-      shell: bash
-      run: |
-        cd buildpacks-ci
-        export STACK='${{ inputs.stack }}'
-        mkdir -p ../capi-release-artifacts
-        cd ../capi-release
-        bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
-
-    - name: Create ops file for CAPI dev release  
-      shell: bash
-      run: |
-        mkdir -p capi-release-artifacts
-        echo "- type: replace" > capi-release-artifacts/use-dev-release-opsfile.yml
-        echo "  path: /releases/-" >> capi-release-artifacts/use-dev-release-opsfile.yml
-        echo "  value:" >> capi-release-artifacts/use-dev-release-opsfile.yml  
-        echo "    name: capi" >> capi-release-artifacts/use-dev-release-opsfile.yml
-        echo "    version: 1.213.0+dev.1" >> capi-release-artifacts/use-dev-release-opsfile.yml
-
-    - name: Use new buildpack BOSH releases
-      shell: bash
-      run: |
-        cd buildpacks-ci
-        mkdir -p ../built-buildpacks-artifacts ../buildpacks-opsfile
-        cat > ../buildpacks-opsfile/use-latest-buildpack-releases.yml << 'EOF'
-        EOF
-
-    - name: Copy rootfs smoke test manifest
+    - name: Copy smoke test manifest
       shell: bash
       run: |
         mkdir -p rootfs-release-artifacts/manifests
         cp ${{ inputs.stack }}-release/manifests/manifest.yml rootfs-release-artifacts/manifests/manifest.yml
+        sed -i "s/version: .*/version: ${unique_version}/" rootfs-release-artifacts/manifests/manifest.yml
 
     - name: Deploy rootfs smoke test
       shell: bash
@@ -311,17 +164,43 @@ runs:
     - name: Run rootfs smoke test
       shell: bash
       run: |
-        set -euo pipefail
         cd deployment-source-config
         source source_file.yml
         cd ..
         bosh -d rootfs-smoke-test run-errand smoke-tests
 
+    - name: Create CAPI release
+      shell: bash
+      run: |
+        cd capi-release
+        bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
+        cd ../deployment-source-config
+        source source_file.yml
+        bosh upload-release ../capi-release-artifacts/capi-dev.tgz --non-interactive
+
+    - name: Create ops files
+      shell: bash
+      run: |
+        mkdir -p rootfs-release-artifacts capi-release-artifacts
+        cat > rootfs-release-artifacts/use-dev-release-opsfile.yml <<EOF
+        - type: replace
+          path: /releases/-
+          value:
+            name: ${{ inputs.stack }}
+            version: ${unique_version}
+        EOF
+        cat > capi-release-artifacts/use-dev-release-opsfile.yml <<EOF
+        - type: replace
+          path: /releases/-
+          value:
+            name: capi
+            version: 1.213.0+dev.1
+        EOF
+
     - name: Deploy CF
       id: deploy
       shell: bash
       run: |
-        set -euo pipefail
         cd deployment-source-config
         source source_file.yml
         bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
@@ -330,7 +209,6 @@ runs:
           --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
           --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
           --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
-          --ops-file ../buildpacks-opsfile/use-latest-buildpack-releases.yml \
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
           --var system_domain='${{ inputs.system_domain }}' \
