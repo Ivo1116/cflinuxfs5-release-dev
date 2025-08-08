@@ -7,6 +7,7 @@ cd "$STACK-release"
 
 GO_BLOB_FILENAME=$(cat .go_blob_name)
 
+which yq
 # 1. Remove old Golang blob entries (yq v4 syntax)
 if [[ -f config/blobs.yml ]]; then
   yq eval 'with_entries(select(.key | startswith("golang-1-linux/") | not))' \
