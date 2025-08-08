@@ -1,12 +1,13 @@
-#!/usr/bin/env bash
-set -euo pipefail
-STACK=$1
-VERSION=$2
+ROOTFS_REPO="$STACK-release"
+GO_BLOB_FILENAME=$(cat "$ROOTFS_REPO/.go_blob_name")
+GO_BLOB_PATH="$(pwd)/$ROOTFS_REPO/blobs/golang-1-linux/$GO_BLOB_FILENAME"
 
-GO_BLOB_FILENAME=$(cat "$STACK-release/.go_blob_name")
+for repo in $(find . -type d -path "*/packages/golang-1-linux" | sed 's|/packages/golang-1-linux||' | sort -u); do
+  # Skip the root directory
+  if [[ "$repo" == "." ]]; then
+    continue
+  fi
 
-# Find all repos with golang-1-linux package
-for repo in $(find . -type d -path "*/packages/golang-1-linux" | sed 's|/packages/golang-1-linux||'); do
   echo "=== Updating Golang blob in repo: $repo ==="
   cd "$repo"
 
@@ -27,9 +28,8 @@ EOF
     yq eval 'with_entries(select(.key | test("^golang-1-linux/") | not))' -i config/blobs.yml
   fi
 
-  # Add new blob
-  bosh add-blob "../$STACK-release/blobs/golang-1-linux/$GO_BLOB_FILENAME" \
-    "golang-1-linux/$GO_BLOB_FILENAME"
+  # Add new blob from rootfs repo
+  bosh add-blob "$GO_BLOB_PATH" "golang-1-linux/$GO_BLOB_FILENAME"
 
   # Upload blobs
   bosh upload-blobs
