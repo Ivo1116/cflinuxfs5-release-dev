@@ -93,27 +93,19 @@ runs:
       run: |
         cd ${{ inputs.stack }}-release
         mkdir -p blobs/golang-1-linux blobs/rootfs
-
-        # Copy rootfs tarball
         cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
            blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
-
-        # Get latest stable Go from API
         LATEST_GO_FILE=$(curl -s https://go.dev/dl/?mode=json | \
           jq -r '.[] | select(.stable == true) | .files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive") | .filename' | head -n 1)
         if [[ -z "$LATEST_GO_FILE" ]]; then
           echo "WARNING: Could not detect latest Go version, falling back to go1.21.8.linux-amd64.tar.gz"
           LATEST_GO_FILE="go1.21.8.linux-amd64.tar.gz"
         fi
-
         curl -L --fail -o "blobs/golang-1-linux/$LATEST_GO_FILE" "https://go.dev/dl/$LATEST_GO_FILE"
-
         yq -i 'del(.["golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"])' config/blobs.yml || true
-
         bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" "golang-1-linux/$LATEST_GO_FILE"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
-
         sed -i "s|golang-1-linux/.*|golang-1-linux/$LATEST_GO_FILE|" packages/golang-1-linux/spec
 
     - name: Update golang packaging script
@@ -173,20 +165,14 @@ runs:
         bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
         echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
 
-    - name: Copy smoke test manifest
-      shell: bash
-      run: |
-        mkdir -p rootfs-release-artifacts/manifests
-        cp ${{ inputs.stack }}-release/manifests/manifest.yml rootfs-release-artifacts/manifests/manifest.yml
-        sed -i "s/version: .*/version: ${unique_version}/" rootfs-release-artifacts/manifests/manifest.yml
-
     - name: Deploy rootfs smoke test
       shell: bash
       run: |
         cd deployment-source-config
         source source_file.yml
         bosh -d rootfs-smoke-test deploy \
-          ../rootfs-release-artifacts/manifests/manifest.yml \
+          ../${{ inputs.stack }}-release/manifests/manifest.yml \
+          --var rootfs_version="${unique_version}" \
           --vars-store smoke-test-vars.yml \
           --non-interactive
 
