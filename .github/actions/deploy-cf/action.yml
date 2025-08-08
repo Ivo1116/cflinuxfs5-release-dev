@@ -107,6 +107,7 @@ runs:
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
         sed -i "s|golang-1-linux/.*|golang-1-linux/$LATEST_GO_FILE|" packages/golang-1-linux/spec
+        bosh sync-blobs
 
     - name: Update golang packaging script
       shell: bash
