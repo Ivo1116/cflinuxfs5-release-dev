@@ -87,7 +87,7 @@ instance_groups:
             -----END CERTIFICATE-----
 releases:
 - name: cflinuxfs5
-  version: latest
+  version: ((rootfs_version))
 stemcells:
 - alias: default
   os: ubuntu-noble
