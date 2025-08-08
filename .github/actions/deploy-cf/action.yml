@@ -107,6 +107,7 @@ runs:
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
         bosh sync-blobs
+        bosh upload-blobs   # <-- This is the missing step
 
         echo "===== DEBUG: blobs/golang-1-linux directory ====="
         ls -l blobs/golang-1-linux || true
