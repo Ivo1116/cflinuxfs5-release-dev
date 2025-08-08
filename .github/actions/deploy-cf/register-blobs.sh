@@ -49,12 +49,11 @@ EOF
     bosh add-blob "$ROOTFS_BLOB_PATH" "rootfs/${STACK}-${VERSION}.tar.gz"
   fi
 
-  # Upload blobs
-  # Upload blobs only if blobstore is writable
-  if [[ "$repo_path" != "capi-release" ]]; then
-    bosh upload-blobs
-  else
+  # Upload blobs only if repo is writable
+  if [[ "$repo_path" == *"capi-release" ]]; then
     echo "Skipping bosh upload-blobs for $repo_path (read-only blobstore)"
+  else
+    bosh upload-blobs
   fi
 
   # Commit changes
