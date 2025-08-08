@@ -126,7 +126,15 @@ runs:
         echo "===== DEBUG: blobs/golang-1-linux directory ====="
         ls -l blobs/golang-1-linux || true
         echo "===== DEBUG: config/blobs.yml entry for golang-1-linux ====="
-        grep golang-1-linux config/blobs.yml || echo "No golang-1-linux entry in blobs.yml"
+        grep -A3 "golang-1-linux/$LATEST_GO_FILE" config/blobs.yml || echo "No golang-1-linux entry in blobs.yml"
+        
+        # Verify blobstore_id exists
+        if ! grep -A3 "golang-1-linux/$LATEST_GO_FILE" config/blobs.yml | grep -q "blobstore_id"; then
+          echo "ERROR: Blobstore ID missing for golang-1-linux/$LATEST_GO_FILE in config/blobs.yml"
+          echo "This means bosh upload-blobs did not succeed. Check S3 credentials and config/final.yml."
+          exit 1
+        fi
+
         echo "===== DEBUG: packages/golang-1-linux/spec ====="
         cat packages/golang-1-linux/spec || true
 
