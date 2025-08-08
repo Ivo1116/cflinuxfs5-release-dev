@@ -50,7 +50,12 @@ EOF
   fi
 
   # Upload blobs
-  bosh upload-blobs
+  # Upload blobs only if blobstore is writable
+  if [[ "$repo_path" != "capi-release" ]]; then
+    bosh upload-blobs
+  else
+    echo "Skipping bosh upload-blobs for $repo_path (read-only blobstore)"
+  fi
 
   # Commit changes
   git config --global user.email "ci-bot@example.com"
