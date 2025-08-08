@@ -106,46 +106,7 @@ runs:
         bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" "golang-1-linux/$LATEST_GO_FILE"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
-        sed -i "s|golang-1-linux/.*|golang-1-linux/$LATEST_GO_FILE|" packages/golang-1-linux/spec
         bosh sync-blobs
-
-    - name: Update golang packaging script
-      shell: bash
-      run: |
-        cd ${{ inputs.stack }}-release
-        cat > packages/golang-1-linux/packaging <<'EOF'
-        #!/bin/bash
-        set -euo pipefail
-        BLOB_PATH=""
-
-        # 1. Check current directory (BOSH sometimes puts blobs here)
-        if [[ -n "$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)" ]]; then
-          BLOB_PATH=$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)
-
-        # 2. Check blobs directory relative to compile target
-        elif [[ -n "$(find "$BOSH_COMPILE_TARGET/../blobs/golang-1-linux" -type f -name '*.tar.gz' 2>/dev/null | head -n 1)" ]]; then
-          BLOB_PATH=$(find "$BOSH_COMPILE_TARGET/../blobs/golang-1-linux" -type f -name '*.tar.gz' | head -n 1)
-
-        # 3. Check legacy relative path (for local builds)
-        elif [[ -n "$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' 2>/dev/null | head -n 1)" ]]; then
-          BLOB_PATH=$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' | head -n 1)
-        fi
-
-        if [[ -z "$BLOB_PATH" ]]; then
-          echo "ERROR: No golang blob found"
-          echo "DEBUG: Current directory: $(pwd)"
-          ls -la
-          echo "DEBUG: Blobs directory:"
-          ls -la "$BOSH_COMPILE_TARGET/../blobs/golang-1-linux" || true
-          exit 1
-        fi
-
-        echo "Using blob: $BLOB_PATH"
-        tar -C /var/vcap/packages/golang-1-linux -xzf "$BLOB_PATH"
-        EOF
-        chmod +x packages/golang-1-linux/packaging
-        rm -rf .dev_builds/ .final_builds/ .blobs_cache/ releases/ || true
-        find packages/ -name "spec.lock" -delete || true
 
     - name: Create deployment source config
       shell: bash
