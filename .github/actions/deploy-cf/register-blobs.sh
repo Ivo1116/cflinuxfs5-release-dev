@@ -40,9 +40,8 @@ EOF
   bosh add-blob "$GO_BLOB_PATH" "golang-1-linux/$GO_BLOB_FILENAME"
 
   # If this is the rootfs repo, also update the rootfs blob
-  if [[ "$repo_path" == "$ROOTFS_REPO" ]]; then
+  if [[ "$repo_path" == *"$ROOTFS_REPO" ]]; then
     echo "=== Updating rootfs blob in $repo_path ==="
-    # Remove old rootfs entry
     if [[ -f config/blobs.yml ]]; then
       yq eval "del(.\"rootfs/${STACK}-${VERSION}.tar.gz\")" -i config/blobs.yml
     fi
@@ -68,8 +67,11 @@ EOF
   cd - >/dev/null
 }
 
-# --- Find all repos with golang-1-linux package ---
-for repo in $(find . -type d -path "*/packages/golang-1-linux" | sed 's|/packages/golang-1-linux||' | sort -u); do
+# --- Find all repos with golang-1-linux package, excluding build artifacts ---
+for repo in $(find . -type d -path "*/packages/golang-1-linux" \
+  ! -path "*/.final_builds/*" \
+  ! -path "*/.dev_builds/*" |
+  sed 's|/packages/golang-1-linux||' | sort -u); do
   # Skip the root directory
   if [[ "$repo" == "." ]]; then
     continue
