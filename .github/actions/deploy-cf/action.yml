@@ -89,15 +89,15 @@ runs:
     # --- Prepare blobs using scripts ---
     - name: Fetch rootfs blob
       shell: bash
-      run: .github/scripts/fetch-rootfs.sh ${{ inputs.stack }} ${{ inputs.version }}
+      run: ${{ github.action_path }}/fetch-rootfs.sh ${{ inputs.stack }} ${{ inputs.version }}
 
     - name: Fetch Go blob
       shell: bash
-      run: .github/scripts/fetch-go.sh ${{ inputs.stack }}
+      run: ${{ github.action_path }}/fetch-go.sh ${{ inputs.stack }}
 
     - name: Register blobs
       shell: bash
-      run: .github/scripts/register-blobs.sh ${{ inputs.stack }} ${{ inputs.version }}
+      run: ${{ github.action_path }}/register-blobs.sh ${{ inputs.stack }} ${{ inputs.version }}
 
     # --- Create deployment source config ---
     - name: Create deployment source config
