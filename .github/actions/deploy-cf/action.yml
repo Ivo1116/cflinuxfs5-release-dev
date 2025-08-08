@@ -55,10 +55,9 @@ runs:
     - uses: actions/checkout@v4
       with:
         repository: Ivo1116/capi-release
-        ref: main
+        ref: develop
         path: capi-release
-        submodules: false
-        token: ${{ env.CFLINUXFS5_TOKEN }}
+        submodules: recursive
 
     - uses: actions/checkout@v4
       with:
