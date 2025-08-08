@@ -99,25 +99,22 @@ runs:
            blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
 
         # Get latest stable Go from API
-        LATEST_GO_URL=$(curl -s https://go.dev/dl/?mode=json | \
+        LATEST_GO_FILE=$(curl -s https://go.dev/dl/?mode=json | \
           jq -r '.[] | select(.stable == true) | .files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive") | .filename' | head -n 1)
-        if [[ -z "$LATEST_GO_URL" ]]; then
+        if [[ -z "$LATEST_GO_FILE" ]]; then
           echo "WARNING: Could not detect latest Go version, falling back to go1.21.8.linux-amd64.tar.gz"
-          LATEST_GO_URL="go1.21.8.linux-amd64.tar.gz"
+          LATEST_GO_FILE="go1.21.8.linux-amd64.tar.gz"
         fi
 
-        GO_FILENAME="$LATEST_GO_URL"
-        curl -L --fail -o "blobs/golang-1-linux/$GO_FILENAME" "https://go.dev/dl/$GO_FILENAME"
+        curl -L --fail -o "blobs/golang-1-linux/$LATEST_GO_FILE" "https://go.dev/dl/$LATEST_GO_FILE"
 
-        # Remove old Golang blob entry from blobs.yml
         yq -i 'del(.["golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"])' config/blobs.yml || true
 
-        # Add new Golang blob to BOSH blobs index
-        bosh add-blob "blobs/golang-1-linux/$GO_FILENAME" "golang-1-linux/$GO_FILENAME"
-
-        # Add rootfs blob to BOSH blobs index
+        bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" "golang-1-linux/$LATEST_GO_FILE"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
+
+        sed -i "s|golang-1-linux/.*|golang-1-linux/$LATEST_GO_FILE|" packages/golang-1-linux/spec
 
     - name: Update golang packaging script
       shell: bash
