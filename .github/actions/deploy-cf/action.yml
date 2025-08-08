@@ -54,10 +54,10 @@ runs:
 
     - uses: actions/checkout@v4
       with:
-        repository: ivo1116/capi-release
+        repository: Ivo1116/capi-release
         ref: main
         path: capi-release
-        submodules: recursive
+        submodules: false
 
     - uses: actions/checkout@v4
       with:
