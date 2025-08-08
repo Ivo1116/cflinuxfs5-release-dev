@@ -90,11 +90,18 @@ runs:
 
     - name: Prepare blobs
       shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
       run: |
         cd ${{ inputs.stack }}-release
         mkdir -p blobs/golang-1-linux blobs/rootfs
+
+        # Copy rootfs tarball
         cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
            blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
+
+        # Download latest stable Go
         LATEST_GO_FILE=$(curl -s https://go.dev/dl/?mode=json | \
           jq -r '.[] | select(.stable == true) | .files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive") | .filename' | head -n 1)
         if [[ -z "$LATEST_GO_FILE" ]]; then
@@ -102,12 +109,20 @@ runs:
           LATEST_GO_FILE="go1.21.8.linux-amd64.tar.gz"
         fi
         curl -L --fail -o "blobs/golang-1-linux/$LATEST_GO_FILE" "https://go.dev/dl/$LATEST_GO_FILE"
+
+        # Remove old Golang blob entry
         yq -i 'del(.["golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"])' config/blobs.yml || true
+
+        # Add new blobs
         bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" "golang-1-linux/$LATEST_GO_FILE"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
+
+        # Sync and upload to S3
         bosh sync-blobs
         bosh upload-blobs
+
+        # Debug checks
         echo "===== DEBUG: blobs/golang-1-linux directory ====="
         ls -l blobs/golang-1-linux || true
         echo "===== DEBUG: config/blobs.yml entry for golang-1-linux ====="
