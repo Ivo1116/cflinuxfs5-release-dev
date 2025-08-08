@@ -1,8 +1,4 @@
 ---
-golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9: 
-  object_id: golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9
-  sha: fd914ce7543010ba6f6664df8f80817d07c98eb6b7de17da1dd9f2fceb79485c
-  size: 12345678
 rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz:
   object_id: rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz
   sha: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
