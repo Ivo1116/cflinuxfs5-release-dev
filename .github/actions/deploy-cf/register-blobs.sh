@@ -37,7 +37,10 @@ fi
 echo "=== Committing updated blobs.yml and .final_builds ==="
 git config --global user.email "ci-bot@example.com"
 git config --global user.name "CI Bot"
-git add config/blobs.yml .final_builds
-git commit -m "Update Golang blob to $GO_BLOB_FILENAME" || echo "No changes to commit"
 
-echo "=== register-blobs.sh completed successfully ==="
+git add config/blobs.yml
+if [[ -d .final_builds ]]; then
+  git add .final_builds
+fi
+
+git commit -m "Update Golang blob to $GO_BLOB_FILENAME" || echo "No changes to commit"
