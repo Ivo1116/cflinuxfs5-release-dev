@@ -91,40 +91,68 @@ runs:
     - name: Prepare blobs (local dev mode)
       shell: bash
       run: |
+        set -euo pipefail
         cd ${{ inputs.stack }}-release
+
+        # Ensure jq and yq are available
+        if ! command -v jq >/dev/null 2>&1; then
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+        fi
+        if ! command -v yq >/dev/null 2>&1; then
+          YQ_VERSION=v4.44.3
+          curl -fsSL -o yq \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          chmod +x yq
+          sudo mv yq /usr/local/bin/yq
+        fi
+
         mkdir -p blobs/golang-1-linux blobs/rootfs
 
-        # Copy rootfs tarball
+        # Copy rootfs tarball into blobs (will be registered as a blob below)
         cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
-           blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
+          "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
 
-        # Download latest stable Go
-        LATEST_GO_FILE=$(curl -s https://go.dev/dl/?mode=json | \
-          jq -r '.[] | select(.stable == true) | .files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive") | .filename' | head -n 1)
-        if [[ -z "$LATEST_GO_FILE" ]]; then
+        # Determine and download latest stable Go for linux/amd64
+        LATEST_GO_FILE=$(
+          curl -fsSL https://go.dev/dl/?mode=json |
+            jq -r '
+              [.[] | select(.stable == true)][0].files[] |
+              select(.os == "linux" and .arch == "amd64" and .kind == "archive") |
+              .filename
+            ' | head -n 1
+        )
+        if [[ -z "${LATEST_GO_FILE:-}" ]]; then
           echo "WARNING: Could not detect latest Go version, falling back to go1.21.8.linux-amd64.tar.gz"
           LATEST_GO_FILE="go1.21.8.linux-amd64.tar.gz"
         fi
-        curl -L --fail -o "blobs/golang-1-linux/$LATEST_GO_FILE" "https://go.dev/dl/$LATEST_GO_FILE"
+        echo "GO_BLOB_FILENAME=${LATEST_GO_FILE}" >> "$GITHUB_ENV"
 
-        # Remove old Golang blob entry
-        yq -i 'del(.["golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"])' config/blobs.yml || true
+        curl -Lf --retry 3 -o "blobs/golang-1-linux/$LATEST_GO_FILE" \
+          "https://go.dev/dl/$LATEST_GO_FILE"
 
-        # Add new blobs locally
-        bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" "golang-1-linux/$LATEST_GO_FILE"
+        # Register blobs with the release
+        bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" \
+          "golang-1-linux/$LATEST_GO_FILE"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
-                      "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
+          "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
 
-        # Sync blobs locally (no upload to S3 in CI)
-        bosh sync-blobs
+        # IMPORTANT: Make sure the package spec references the Go blob so BOSH
+        # will stage it under /var/vcap/data/compile/.../blobs/golang-1-linux/
+        yq -i '
+          .files =
+            ((.files // []) | map(select(startswith("golang-1-linux/") | not)))
+            + ["golang-1-linux/'"$LATEST_GO_FILE"'"]
+        ' packages/golang-1-linux/spec
 
-        # Debug checks
-        echo "===== DEBUG: blobs/golang-1-linux directory ====="
-        ls -l blobs/golang-1-linux || true
-        echo "===== DEBUG: config/blobs.yml entry for golang-1-linux ====="
-        grep golang-1-linux config/blobs.yml || echo "No golang-1-linux entry in blobs.yml"
         echo "===== DEBUG: packages/golang-1-linux/spec ====="
-        cat packages/golang-1-linux/spec || true
+        cat packages/golang-1-linux/spec
+
+        echo "===== DEBUG: blobs registered in release (names) ====="
+        bosh blobs || true
+
+        # Do NOT sync blobs in dev mode; we want local blobs embedded in the dev
+        # release tarball and not rely on any remote blobstore.
 
     - name: Create deployment source config
       shell: bash
@@ -185,7 +213,9 @@ runs:
     - name: Create CAPI release
       shell: bash
       run: |
+        set -euo pipefail
         cd capi-release
+        mkdir -p ../capi-release-artifacts
         bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
         cd ../deployment-source-config
         source source_file.yml
