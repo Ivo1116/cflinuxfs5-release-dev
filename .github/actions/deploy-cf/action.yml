@@ -91,6 +91,7 @@ runs:
     - name: Prepare blobs (local dev mode)
       shell: bash
       run: |
+        # Prepare blobs (local dev mode) — CLEAN + RE-ADD
         set -euo pipefail
         cd ${{ inputs.stack }}-release
 
@@ -107,9 +108,19 @@ runs:
           sudo mv yq /usr/local/bin/yq
         fi
 
-        mkdir -p blobs/golang-1-linux blobs/rootfs
+        # Start clean for this package's blobs (avoid S3 lookups for stale ids)
+        if [[ -f config/blobs.yml ]]; then
+          yq eval -i \
+            'with_entries(select(.key | startswith("golang-1-linux/") | not))' \
+            config/blobs.yml
+        fi
+        rm -rf blobs/golang-1-linux
+        mkdir -p blobs/golang-1-linux
 
-        # Copy rootfs tarball
+        # Also ensure rootfs blobs dir exists
+        mkdir -p blobs/rootfs
+
+        # Copy rootfs tarball into blobs
         cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
           "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
 
@@ -123,7 +134,7 @@ runs:
             ' | head -n 1
         )
         if [[ -z "${LATEST_GO_FILE:-}" ]]; then
-          echo "WARNING: Could not detect latest Go version, falling back to go1.21.8.linux-amd64.tar.gz"
+          echo "WARNING: fallback Go version -> go1.21.8.linux-amd64.tar.gz"
           LATEST_GO_FILE="go1.21.8.linux-amd64.tar.gz"
         fi
         export GO_BLOB_FILENAME="$LATEST_GO_FILE"
@@ -131,23 +142,26 @@ runs:
         curl -Lf --retry 3 -o "blobs/golang-1-linux/$GO_BLOB_FILENAME" \
           "https://go.dev/dl/$GO_BLOB_FILENAME"
 
-        # Register blobs
+        # Register blobs (local dev)
         bosh add-blob "blobs/golang-1-linux/$GO_BLOB_FILENAME" \
           "golang-1-linux/$GO_BLOB_FILENAME"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
           "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
 
-        # CRITICAL: Make the package spec require exactly this Go blob
-        # Using env() avoids quoting problems with yq v4
+        # Make the package spec require exactly this Go tarball (no stale ids)
         yq eval -i '.files = ["golang-1-linux/" + env(GO_BLOB_FILENAME)]' \
           packages/golang-1-linux/spec
 
         echo "===== DEBUG: packages/golang-1-linux/spec ====="
         cat packages/golang-1-linux/spec
 
-        echo "===== DEBUG: registered blobs ====="
-        bosh blobs || true
+        echo "===== DEBUG: any remaining golang-1-linux blob ids in config/blobs.yml ====="
+        if [[ -f config/blobs.yml ]]; then
+          yq e 'keys | .[]' config/blobs.yml | grep '^golang-1-linux/' || true
+        fi
 
+        echo "===== DEBUG: bosh blobs (names) ====="
+        bosh blobs || true
 
     - name: Create deployment source config
       shell: bash
