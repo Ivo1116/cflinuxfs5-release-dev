@@ -58,6 +58,7 @@ runs:
         ref: main
         path: capi-release
         submodules: false
+        token: ${{ env.CFLINUXFS5_TOKEN }}
 
     - uses: actions/checkout@v4
       with:
