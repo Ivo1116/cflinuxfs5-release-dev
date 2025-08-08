@@ -1,29 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-BLOB_PATH=""
+echo "DEBUG: Current directory: $(pwd)"
 
-# 1. Check current directory
-if [[ -n "$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)" ]]; then
-  BLOB_PATH=$(find . -maxdepth 1 -name '*.tar.gz' | head -n 1)
-
-# 2. Check blobs directory relative to compile target
-elif [[ -n "$(find "$BOSH_COMPILE_TARGET/../blobs/golang-1-linux" -type f -name '*.tar.gz' 2>/dev/null | head -n 1)" ]]; then
-  BLOB_PATH=$(find "$BOSH_COMPILE_TARGET/../blobs/golang-1-linux" -type f -name '*.tar.gz' | head -n 1)
-
-# 3. Check legacy relative path (for local builds)
-elif [[ -n "$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' 2>/dev/null | head -n 1)" ]]; then
-  BLOB_PATH=$(find ./../../blobs/golang-1-linux/ -type f -name '*.tar.gz' | head -n 1)
-fi
+# Find the Golang tarball in the current package source directory
+BLOB_PATH=$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)
 
 if [[ -z "$BLOB_PATH" ]]; then
-  echo "ERROR: No golang blob found"
-  echo "DEBUG: Current directory: $(pwd)"
-  ls -la
-  echo "DEBUG: Blobs directory:"
-  ls -la "$BOSH_COMPILE_TARGET/../blobs/golang-1-linux" || true
+  echo "ERROR: No golang blob found in package source directory"
   exit 1
 fi
 
-echo "Using blob: $BLOB_PATH"
-tar -C /var/vcap/packages/golang-1-linux -xzf "$BLOB_PATH"
+echo "DEBUG: Using Golang blob: $BLOB_PATH"
+
+# Extract Golang to /usr/local
+tar -C /usr/local -xzf "$BLOB_PATH"
