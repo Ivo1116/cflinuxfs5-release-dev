@@ -3,17 +3,17 @@ description: 'Deploy Cloud Foundry with new rootfs'
 
 inputs:
   stack:
-    description: 'Stack name'
+    description: 'Stack name (e.g., cflinuxfs5)'
     required: true
   version:
-    description: 'Version number'
+    description: 'Rootfs version number (e.g., 1.0.0-rc.1)'
     required: true
   env_name:
-    description: 'Environment name'
+    description: 'Environment name for BBL'
     required: false
     default: 'cflinuxfs5'
   system_domain:
-    description: 'System domain'
+    description: 'CF system domain'
     required: false
     default: 'cflinuxfs5.buildpacks-gcp.ci.cf-app.com'
   bbl_state_repo:
@@ -32,44 +32,41 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Checkout cf-deployment
-      uses: actions/checkout@v4
+    # --- Checkout required repos ---
+    - uses: actions/checkout@v4
       with:
         repository: cloudfoundry/cf-deployment
         ref: v21.11.0
         path: cf-deployment
 
-    - name: Checkout buildpacks-ci
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         repository: cloudfoundry/buildpacks-ci
         ref: master
         path: buildpacks-ci
 
-    - name: Checkout rootfs release
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         repository: ivo1116/${{ inputs.stack }}-release
         ref: main
         path: ${{ inputs.stack }}-release
         token: ${{ env.CFLINUXFS5_TOKEN }}
 
-    - name: Checkout CAPI release
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         repository: cloudfoundry/capi-release
         ref: main
         path: capi-release
         submodules: recursive
 
-    - name: Checkout BBL state repo
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         repository: ${{ inputs.bbl_state_repo }}
         ref: ${{ inputs.bbl_state_branch }}
         path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
+    # --- Download rootfs from S3 ---
     - name: Download rootfs from S3
       uses: ./.github/actions/download-s3
       with:
@@ -80,7 +77,8 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
 
-    - name: Install BBL & bosh
+    # --- Install BBL & BOSH ---
+    - name: Install BBL & BOSH
       shell: bash
       run: |
         wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
@@ -88,93 +86,31 @@ runs:
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    - name: Prepare blobs (local dev mode)
+    # --- Prepare blobs using scripts ---
+    - name: Fetch rootfs blob
       shell: bash
-      run: |
-        # Prepare blobs (local dev mode) — CLEAN + RE-ADD
-        set -euo pipefail
-        cd ${{ inputs.stack }}-release
+      run: .github/scripts/fetch-rootfs.sh ${{ inputs.stack }} ${{ inputs.version }}
 
-        # Ensure jq and yq
-        if ! command -v jq >/dev/null 2>&1; then
-          sudo apt-get update -y
-          sudo apt-get install -y jq
-        fi
-        if ! command -v yq >/dev/null 2>&1; then
-          YQ_VERSION=v4.44.3
-          curl -fsSL -o yq \
-            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
-          chmod +x yq
-          sudo mv yq /usr/local/bin/yq
-        fi
+    - name: Fetch Go blob
+      shell: bash
+      run: .github/scripts/fetch-go.sh ${{ inputs.stack }}
 
-        # Start clean for this package's blobs (avoid S3 lookups for stale ids)
-        if [[ -f config/blobs.yml ]]; then
-          yq eval -i \
-            'with_entries(select(.key | startswith("golang-1-linux/") | not))' \
-            config/blobs.yml
-        fi
-        rm -rf blobs/golang-1-linux
-        mkdir -p blobs/golang-1-linux
+    - name: Register blobs
+      shell: bash
+      run: .github/scripts/register-blobs.sh ${{ inputs.stack }} ${{ inputs.version }}
 
-        # Also ensure rootfs blobs dir exists
-        mkdir -p blobs/rootfs
-
-        # Copy rootfs tarball into blobs
-        cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
-          "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
-
-        # Determine and download latest stable Go for linux/amd64
-        LATEST_GO_FILE=$(
-          curl -fsSL https://go.dev/dl/?mode=json |
-            jq -r '
-              [.[] | select(.stable == true)][0].files[] |
-              select(.os == "linux" and .arch == "amd64" and .kind == "archive") |
-              .filename
-            ' | head -n 1
-        )
-        if [[ -z "${LATEST_GO_FILE:-}" ]]; then
-          echo "WARNING: fallback Go version -> go1.21.8.linux-amd64.tar.gz"
-          LATEST_GO_FILE="go1.21.8.linux-amd64.tar.gz"
-        fi
-        export GO_BLOB_FILENAME="$LATEST_GO_FILE"
-
-        curl -Lf --retry 3 -o "blobs/golang-1-linux/$GO_BLOB_FILENAME" \
-          "https://go.dev/dl/$GO_BLOB_FILENAME"
-
-        # Register blobs (local dev)
-        bosh add-blob "blobs/golang-1-linux/$GO_BLOB_FILENAME" \
-          "golang-1-linux/$GO_BLOB_FILENAME"
-        bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
-          "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
-
-        # Make the package spec require exactly this Go tarball (no stale ids)
-        yq eval -i '.files = ["golang-1-linux/" + env(GO_BLOB_FILENAME)]' \
-          packages/golang-1-linux/spec
-
-        echo "===== DEBUG: packages/golang-1-linux/spec ====="
-        cat packages/golang-1-linux/spec
-
-        echo "===== DEBUG: any remaining golang-1-linux blob ids in config/blobs.yml ====="
-        if [[ -f config/blobs.yml ]]; then
-          yq e 'keys | .[]' config/blobs.yml | grep '^golang-1-linux/' || true
-        fi
-
-        echo "===== DEBUG: bosh blobs (names) ====="
-        bosh blobs || true
-
+    # --- Create deployment source config ---
     - name: Create deployment source config
       shell: bash
       run: |
-        cd bbl-state
-        cd ${{ inputs.stack }}
+        cd bbl-state/${{ inputs.stack }}
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
+    # --- Download & Upload stemcell ---
     - name: Download GCP ubuntu-noble stemcell
       shell: bash
-      run: |
-        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
+      run: wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
     - name: Upload stemcell to BOSH
       shell: bash
@@ -184,7 +120,8 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
-    - name: Build and upload rootfs release (dev mode)
+    # --- Build & Upload rootfs release ---
+    - name: Build and upload rootfs release
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
@@ -193,13 +130,14 @@ runs:
         bosh create-release --force --version="$UNIQUE_VERSION" \
           --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz \
           --timestamp-version
-        echo "===== DEBUG: Checking release tarball for golang-1-linux blob ====="
+        echo "DEBUG: Checking release tarball for golang-1-linux blob"
         tar -tzf ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz | grep golang-1-linux || echo "No golang-1-linux blob in tarball!"
         cd ../deployment-source-config
         source source_file.yml
         bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
         echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
 
+    # --- Deploy & Run rootfs smoke test ---
     - name: Deploy rootfs smoke test
       shell: bash
       run: |
@@ -219,10 +157,10 @@ runs:
         cd ..
         bosh -d rootfs-smoke-test run-errand smoke-tests
 
+    # --- Build & Upload CAPI release ---
     - name: Create CAPI release
       shell: bash
       run: |
-        set -euo pipefail
         cd capi-release
         mkdir -p ../capi-release-artifacts
         bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
@@ -230,6 +168,7 @@ runs:
         source source_file.yml
         bosh upload-release ../capi-release-artifacts/capi-dev.tgz --non-interactive
 
+    # --- Create ops files ---
     - name: Create ops files
       shell: bash
       run: |
@@ -249,6 +188,7 @@ runs:
             version: 1.213.0+dev.1
         EOF
 
+    # --- Deploy CF ---
     - name: Deploy CF
       id: deploy
       shell: bash
