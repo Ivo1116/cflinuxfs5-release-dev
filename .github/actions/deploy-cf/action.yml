@@ -88,8 +88,12 @@ runs:
         cp ../rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
            blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
 
-        # Download latest stable Go dynamically (fallback to known version if needed)
-        LATEST_GO_URL=$(curl -s https://go.dev/dl/ | grep -Eo 'https://go.dev/dl/go[0-9]+\.[0-9]+(\.[0-9]+)?\.linux-amd64\.tar\.gz' | head -n 1)
+        # Get latest stable Go version from official API
+        LATEST_GO_URL=$(curl -s https://go.dev/dl/?mode=json | \
+          jq -r '.[] | select(.stable == true) | .files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive") | .version + " " + .filename' | \
+          head -n 1 | \
+          awk '{print "https://go.dev/dl/"$2}')
+
         if [[ -z "$LATEST_GO_URL" ]]; then
           echo "WARNING: Could not detect latest Go version, falling back to 1.21.8"
           LATEST_GO_URL="https://go.dev/dl/go1.21.8.linux-amd64.tar.gz"
@@ -97,7 +101,20 @@ runs:
 
         GO_FILENAME=$(basename "$LATEST_GO_URL")
         echo "Downloading Go from $LATEST_GO_URL ..."
-        curl -L --fail -o "blobs/golang-1-linux/$GO_FILENAME" "$LATEST_GO_URL"
+
+        # Retry download up to 3 times
+        for i in 1 2 3; do
+          if curl -L --fail -o "blobs/golang-1-linux/$GO_FILENAME" "$LATEST_GO_URL"; then
+            break
+          fi
+          echo "Download failed (attempt $i), retrying in 5s..."
+          sleep 5
+        done
+
+        if [[ ! -f "blobs/golang-1-linux/$GO_FILENAME" ]]; then
+          echo "ERROR: Failed to download Go after 3 attempts"
+          exit 1
+        fi
 
     - name: Update golang packaging script
       shell: bash
