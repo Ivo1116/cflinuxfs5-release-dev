@@ -91,7 +91,7 @@ runs:
     - name: Download GCP ubuntu-noble stemcell
       shell: bash
       run: |
-        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent?v=1.25"
+        wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
 
     - name: Upload stemcell to BOSH
       shell: bash
