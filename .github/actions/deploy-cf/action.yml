@@ -88,11 +88,8 @@ runs:
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    - name: Prepare blobs
+    - name: Prepare blobs (local dev mode)
       shell: bash
-      env:
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
       run: |
         cd ${{ inputs.stack }}-release
         mkdir -p blobs/golang-1-linux blobs/rootfs
@@ -113,28 +110,19 @@ runs:
         # Remove old Golang blob entry
         yq -i 'del(.["golang-1-linux/28d469386dd272ae9b14aae21f084fe40f07f84a8e04024d18c13e47e5e620a9"])' config/blobs.yml || true
 
-        # Add new blobs
+        # Add new blobs locally
         bosh add-blob "blobs/golang-1-linux/$LATEST_GO_FILE" "golang-1-linux/$LATEST_GO_FILE"
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
 
-        # Sync and upload to S3
+        # Sync blobs locally (no upload to S3 in CI)
         bosh sync-blobs
-        bosh upload-blobs
 
         # Debug checks
         echo "===== DEBUG: blobs/golang-1-linux directory ====="
         ls -l blobs/golang-1-linux || true
         echo "===== DEBUG: config/blobs.yml entry for golang-1-linux ====="
-        grep -A3 "golang-1-linux/$LATEST_GO_FILE" config/blobs.yml || echo "No golang-1-linux entry in blobs.yml"
-        
-        # Verify blobstore_id exists
-        if ! grep -A3 "golang-1-linux/$LATEST_GO_FILE" config/blobs.yml | grep -q "blobstore_id"; then
-          echo "ERROR: Blobstore ID missing for golang-1-linux/$LATEST_GO_FILE in config/blobs.yml"
-          echo "This means bosh upload-blobs did not succeed. Check S3 credentials and config/final.yml."
-          exit 1
-        fi
-
+        grep golang-1-linux config/blobs.yml || echo "No golang-1-linux entry in blobs.yml"
         echo "===== DEBUG: packages/golang-1-linux/spec ====="
         cat packages/golang-1-linux/spec || true
 
@@ -159,7 +147,7 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
-    - name: Build and upload rootfs release
+    - name: Build and upload rootfs release (dev mode)
       shell: bash
       run: |
         cd ${{ inputs.stack }}-release
