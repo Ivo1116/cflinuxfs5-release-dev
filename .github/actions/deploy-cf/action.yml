@@ -107,12 +107,13 @@ runs:
         bosh add-blob "blobs/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz" \
                       "rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz"
         bosh sync-blobs
-        echo "DEBUG: config/blobs.yml entry for golang-1-linux:"
-        grep golang-1-linux config/blobs.yml || true
-        echo "DEBUG: packages/golang-1-linux/spec content:"
+
+        echo "===== DEBUG: blobs/golang-1-linux directory ====="
+        ls -l blobs/golang-1-linux || true
+        echo "===== DEBUG: config/blobs.yml entry for golang-1-linux ====="
+        grep golang-1-linux config/blobs.yml || echo "No golang-1-linux entry in blobs.yml"
+        echo "===== DEBUG: packages/golang-1-linux/spec ====="
         cat packages/golang-1-linux/spec || true
-        echo "DEBUG: blobs/golang-1-linux directory listing:"
-        ls -la blobs/golang-1-linux || true
 
     - name: Create deployment source config
       shell: bash
@@ -143,8 +144,8 @@ runs:
         mkdir -p ../rootfs-release-artifacts
         bosh create-release --force --version="$UNIQUE_VERSION" \
           --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz
-        echo "DEBUG: Contents of release tarball:"
-        tar -tzf ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz | grep golang-1-linux || echo "No golang-1-linux blob found in tarball!"
+        echo "===== DEBUG: Checking release tarball for golang-1-linux blob ====="
+        tar -tzf ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz | grep golang-1-linux || echo "No golang-1-linux blob in tarball!"
         cd ../deployment-source-config
         source source_file.yml
         bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
