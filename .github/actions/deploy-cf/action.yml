@@ -152,6 +152,7 @@ runs:
       run: |
         cd ${{ inputs.stack }}-release
         UNIQUE_VERSION="0+dev.$(date +%s)"
+        mkdir -p ../rootfs-release-artifacts
         bosh create-release --force --version="$UNIQUE_VERSION" \
           --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz
         cd ../deployment-source-config
