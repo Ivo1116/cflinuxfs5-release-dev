@@ -3,44 +3,45 @@ set -euo pipefail
 STACK=$1
 VERSION=$2
 
-cd "$STACK-release"
+GO_BLOB_FILENAME=$(cat "$STACK-release/.go_blob_name")
 
-GO_BLOB_FILENAME=$(cat .go_blob_name)
+# Find all repos with golang-1-linux package
+for repo in $(find . -type d -path "*/packages/golang-1-linux" | sed 's|/packages/golang-1-linux||'); do
+  echo "=== Updating Golang blob in repo: $repo ==="
+  cd "$repo"
 
-echo "=== Cleaning old Golang blob entries from blobs.yml ==="
-if [[ -f config/blobs.yml ]]; then
-  # Remove any existing golang-1-linux entries
-  yq eval 'with_entries(select(.key | test("^golang-1-linux/") | not))' \
-    -i config/blobs.yml
-fi
+  # Ensure spec file exists
+  mkdir -p packages/golang-1-linux
+  cat >packages/golang-1-linux/spec <<EOF
+---
+name: golang-1-linux
+files:
+- golang-1-linux/$GO_BLOB_FILENAME
+EOF
 
-echo "=== Removing old final build records for golang-1-linux ==="
-rm -rf .final_builds/packages/golang-1-linux
+  # Remove old spec.lock if present
+  rm -f packages/golang-1-linux/spec.lock
 
-echo "=== Adding new Golang blob: $GO_BLOB_FILENAME ==="
-bosh add-blob "blobs/golang-1-linux/$GO_BLOB_FILENAME" \
-  "golang-1-linux/$GO_BLOB_FILENAME"
+  # Remove old Golang blob entries
+  if [[ -f config/blobs.yml ]]; then
+    yq eval 'with_entries(select(.key | test("^golang-1-linux/") | not))' -i config/blobs.yml
+  fi
 
-echo "=== Adding rootfs blob: ${STACK}-${VERSION}.tar.gz ==="
-bosh add-blob "blobs/rootfs/${STACK}-${VERSION}.tar.gz" \
-  "rootfs/${STACK}-${VERSION}.tar.gz"
+  # Add new blob
+  bosh add-blob "../$STACK-release/blobs/golang-1-linux/$GO_BLOB_FILENAME" \
+    "golang-1-linux/$GO_BLOB_FILENAME"
 
-echo "=== Uploading blobs to blobstore ==="
-bosh upload-blobs
+  # Upload blobs
+  bosh upload-blobs
 
-echo "=== Verifying Golang blob is registered ==="
-if ! bosh blobs | grep -q "golang-1-linux/$GO_BLOB_FILENAME"; then
-  echo "ERROR: Golang blob not registered in blobs.yml!"
-  exit 1
-fi
+  # Commit changes
+  git config --global user.email "ci-bot@example.com"
+  git config --global user.name "CI Bot"
+  git add packages/golang-1-linux/spec config/blobs.yml
+  if [[ -d .final_builds ]]; then
+    git add .final_builds
+  fi
+  git commit -m "Update golang-1-linux to $GO_BLOB_FILENAME" || echo "No changes to commit"
 
-echo "=== Committing updated blobs.yml and .final_builds ==="
-git config --global user.email "ci-bot@example.com"
-git config --global user.name "CI Bot"
-
-git add config/blobs.yml
-if [[ -d .final_builds ]]; then
-  git add .final_builds
-fi
-
-git commit -m "Update Golang blob to $GO_BLOB_FILENAME" || echo "No changes to commit"
+  cd - >/dev/null
+done
