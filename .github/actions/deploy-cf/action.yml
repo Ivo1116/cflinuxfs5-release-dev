@@ -136,11 +136,11 @@ runs:
         cd ..
         bosh upload-release capi-release.tgz --non-interactive
 
-    # --- Create ops files ---
+    # --- Create ops files for custom stack ---
     - name: Create ops files
       shell: bash
       run: |
-        mkdir -p rootfs-release-artifacts capi-release-artifacts
+        mkdir -p rootfs-release-artifacts capi-release-artifacts custom-ops
         cat > rootfs-release-artifacts/use-dev-release-opsfile.yml <<EOF
         - type: replace
           path: /releases/name=${{ inputs.stack }}
@@ -155,8 +155,20 @@ runs:
             name: capi
             version: 1.213.0
         EOF
+        cat > custom-ops/add-${{ inputs.stack }}.yml <<EOF
+        - type: replace
+          path: /releases/-
+          value:
+            name: ${{ inputs.stack }}
+            version: ${unique_version}
+        EOF
+        cat > custom-ops/set-${{ inputs.stack }}-default-stack.yml <<EOF
+        - type: replace
+          path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/default_stack
+          value: ${{ inputs.stack }}
+        EOF
 
-    # --- Deploy CF ---
+    # --- Deploy CF with custom stack ---
     - name: Deploy CF
       id: deploy
       shell: bash
@@ -167,8 +179,8 @@ runs:
           --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
           --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
           --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
-          --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
-          --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
+          --ops-file ../custom-ops/add-${{ inputs.stack }}.yml \
+          --ops-file ../custom-ops/set-${{ inputs.stack }}-default-stack.yml \
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-prebuilt-capi.yml \
           --var system_domain='${{ inputs.system_domain }}' \
