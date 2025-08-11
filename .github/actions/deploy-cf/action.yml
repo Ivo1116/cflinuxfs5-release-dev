@@ -32,7 +32,6 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    # --- Checkout required repos ---
     - uses: actions/checkout@v4
       with:
         repository: cloudfoundry/cf-deployment
@@ -53,17 +52,17 @@ runs:
         path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
-    # --- Download rootfs release from S3 ---
-    - name: Download rootfs release from S3
+    - name: Download rootfs blob from S3
       shell: bash
       run: |
-        aws s3 cp s3://cflinuxfs5test/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tgz ./rootfs-release.tgz
+        mkdir -p rootfs-artifacts
+        aws s3 cp s3://cflinuxfs5test/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
+          rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
       env:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: us-east-1
+        AWS_REGION: ${{ env.AWS_REGION }}
 
-    # --- Install BBL & BOSH ---
     - name: Install BBL & BOSH
       shell: bash
       run: |
@@ -72,7 +71,18 @@ runs:
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    # --- Create deployment source config ---
+    - name: Fetch Go blob
+      shell: bash
+      run: ${{ github.action_path }}/fetch-go.sh ${{ inputs.stack }}
+
+    - name: Fetch rootfs blob
+      shell: bash
+      run: ${{ github.action_path }}/fetch-rootfs.sh ${{ inputs.stack }} ${{ inputs.version }}
+
+    - name: Register blobs
+      shell: bash
+      run: ${{ github.action_path }}/register-blobs.sh ${{ inputs.stack }} ${{ inputs.version }}
+
     - name: Create deployment source config
       shell: bash
       run: |
@@ -80,7 +90,6 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
-    # --- Upload stemcell ---
     - name: Download GCP ubuntu-noble stemcell
       shell: bash
       run: wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
@@ -93,61 +102,16 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
-    # --- Upload rootfs release from S3 ---
-    - name: Upload rootfs release to BOSH
+    - name: Build and upload rootfs release
       shell: bash
       run: |
-        cd deployment-source-config
-        source source_file.yml
-        cd ..
-        bosh upload-release ./rootfs-release.tgz --non-interactive
-
-    # --- Build & Upload CAPI release ---
-    - name: Create CAPI release
-      shell: bash
-      run: |
-        cd capi-release
-        mkdir -p ../capi-release-artifacts
-        bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
+        cd ${{ inputs.stack }}-release
+        UNIQUE_VERSION="${{ inputs.version }}+dev.$(date +%s)"
+        mkdir -p ../rootfs-release-artifacts
+        bosh create-release --force --version="$UNIQUE_VERSION" \
+          --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz \
+          --timestamp-version
         cd ../deployment-source-config
         source source_file.yml
-        bosh upload-release ../capi-release-artifacts/capi-dev.tgz --non-interactive
-
-    # --- Create ops files ---
-    - name: Create ops files
-      shell: bash
-      run: |
-        mkdir -p rootfs-release-artifacts capi-release-artifacts
-        cat > rootfs-release-artifacts/use-s3-release-opsfile.yml <<EOF
-        - type: replace
-          path: /releases/name=${{ inputs.stack }}
-          value:
-            name: ${{ inputs.stack }}
-            version: ${{ inputs.version }}
-        EOF
-        cat > capi-release-artifacts/use-dev-release-opsfile.yml <<EOF
-        - type: replace
-          path: /releases/name=capi
-          value:
-            name: capi
-            version: 1.213.0+dev.1
-        EOF
-
-    # --- Deploy CF ---
-    - name: Deploy CF
-      id: deploy
-      shell: bash
-      run: |
-        cd deployment-source-config
-        source source_file.yml
-        bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
-          --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
-          --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
-          --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
-          --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
-          --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
-          --ops-file ../rootfs-release-artifacts/use-s3-release-opsfile.yml \
-          --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
-          --var system_domain='${{ inputs.system_domain }}' \
-          --vars-store cf-vars.yml
-        echo "success=true" >> $GITHUB_OUTPUT
+        bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
+        echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
