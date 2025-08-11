@@ -106,8 +106,38 @@ jobs:
             cd "$WORKSPACE"
             bosh upload-release "$DEV_TGZ" --non-interactive
 
+            # Create a dummy manifest to compile the release
+            cat > dummy-manifest.yml <<EOF
+            ---
+            name: compile-$REL_NAME
+            releases:
+            - name: $REL_NAME
+              version: $REL_VER
+            stemcells:
+            - alias: default
+              os: ubuntu-noble
+              version: "1.25"
+            instance_groups:
+            - name: dummy
+              azs: [z1]
+              instances: 1
+              jobs:
+              - name: bpm
+                release: bpm
+              vm_type: default
+              stemcell: default
+              networks:
+              - name: default
+          EOF
+
+            # Deploy dummy to trigger compilation
+            bosh -n -d compile-$REL_NAME deploy dummy-manifest.yml
+
             # Export compiled release for Noble stemcell
             bosh export-release "$REL_NAME/$REL_VER" ubuntu-noble/1.25 --dir "$WORKSPACE/compiled-releases"
+
+            # Delete dummy deployment
+            bosh -n -d compile-$REL_NAME delete-deployment
 
             # Upload compiled release to S3
             for file in "$WORKSPACE"/compiled-releases/*.tgz; do
@@ -115,5 +145,5 @@ jobs:
             done
 
             # Cleanup
-            rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ"
+            rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
           done
