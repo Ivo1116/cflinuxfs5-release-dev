@@ -1,0 +1,101 @@
+name: Compile CF Releases for Noble
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compile-and-upload:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
+    steps:
+      # --- Checkout cf-deployment ---
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudfoundry/cf-deployment
+          ref: main
+          path: cf-deployment
+
+      # --- Checkout BBL state ---
+      - uses: actions/checkout@v4
+        with:
+          repository: ivo1116/buildpacks-envs
+          ref:  main
+          path: bbl-state
+          ssh-key: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
+
+      # --- Install BBL & BOSH ---
+      - name: Install BBL & BOSH
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip awscli
+          wget -O /tmp/bbl https://github.com/cloudfoundry/bosh-bootloader/releases/download/v9.0.0/bbl-v9.0.0_linux_x86-64
+          chmod +x /tmp/bbl && sudo mv /tmp/bbl /usr/local/bin/bbl
+          wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.5.3/bosh-cli-7.5.3-linux-amd64
+          chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
+
+      # --- Setup BOSH env ---
+      - name: Setup BOSH env
+        run: |
+          cd bbl-state/cflinuxfs5
+          mkdir -p ../../deployment-source-config
+          bbl print-env > ../../deployment-source-config/source_file.yml
+
+      # --- Upload Noble stemcell ---
+      - name: Upload Noble stemcell
+        run: |
+          wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
+          cd deployment-source-config
+          source source_file.yml
+          cd ..
+          bosh upload-stemcell gcp-stemcell.tgz --non-interactive
+
+      # --- Compile and upload all releases ---
+      - name: Compile and upload releases
+        run: |
+          set -e
+          cd deployment-source-config
+          source source_file.yml
+          cd ..
+
+          # List of CF releases from cf-deployment
+          RELEASES=(
+            "bpm-release"
+            "capi-release"
+            "cf-cli-release"
+            "cf-networking-release"
+            "credhub-release"
+            "diego-release"
+            "garden-runc-release"
+            "log-cache-release"
+            "loggregator-release"
+            "nats-release"
+            "routing-release"
+            "silk-release"
+            "statsd-injector-release"
+            "syslog-release"
+            "uaa-release"
+          )
+
+          for rel in "${RELEASES[@]}"; do
+            echo "=== Building $rel for Noble ==="
+            git clone https://github.com/cloudfoundry/$rel.git
+            cd $rel
+            bosh create-release --force --version="dev.$(date +%s)"
+            bosh upload-release dev_releases/*/*.tgz --non-interactive
+
+            # Export compiled release for Noble stemcell
+            REL_NAME=$(bosh int config/final.yml --path /name || echo $rel)
+            REL_VER=$(bosh int dev_releases/*/index.yml --path /builds | grep version | tail -n 1 | awk '{print $2}')
+            bosh export-release $REL_NAME/$REL_VER ubuntu-noble/1.25 --dir ../compiled-releases
+
+            cd ..
+            # Upload compiled release to S3
+            for file in compiled-releases/*.tgz; do
+              aws s3 cp "$file" s3://my-noble-releases/$rel/
+            done
+            rm -rf $rel compiled-releases
+          done
