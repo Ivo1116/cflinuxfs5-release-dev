@@ -182,7 +182,6 @@ runs:
         bosh -n -d cf deploy ../cf-deployment/cf-deployment.yml \
           --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
           --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
-          --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
           --ops-file ../custom-ops/add-${{ inputs.stack }}.yml \
           --ops-file ../custom-ops/set-${{ inputs.stack }}-default-stack.yml \
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
