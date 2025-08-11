@@ -99,21 +99,41 @@ jobs:
           # Ensure S3 bucket exists
           aws s3 mb s3://$(echo $S3_BUCKET | cut -d/ -f1) --region $AWS_REGION || true
 
+          # Actual repo names from your list
+          RELEASES=(
+            "bpm-release"
+            "capi-release"
+            "bosh-package-cf-cli-release"
+            "cf-networking-release"
+            "credhub-release"
+            "diego-release"
+            "garden-runc-release"
+            "log-cache-release"
+            "loggregator-release"
+            "nats-release"
+            "routing-release"
+            "silk-release"
+            "statsd-injector-release"
+            "syslog-release"
+            "uaa-release"
+          )
+
           for rel in "${RELEASES[@]}"; do
             echo "=== Building $rel for Noble ==="
 
-            # Get repo URL from cf-deployment.yml
-            REPO_URL=$(bosh int cf-deployment/cf-deployment.yml --path /releases/name=$rel/url 2>/dev/null || true)
-
-            if [[ -z "$REPO_URL" ]]; then
-              echo "No URL found for $rel in cf-deployment.yml — skipping"
-              continue
-            fi
+            # Map org for special cases
+            case "$rel" in
+              credhub-release)
+                ORG="pivotal"
+                ;;
+              *)
+                ORG="cloudfoundry"
+                ;;
+            esac
 
             # Clone repo with submodules
-            git clone --recursive $REPO_URL
-            REPO_NAME=$(basename "$REPO_URL" .git)
-            cd $REPO_NAME
+            git clone --recursive https://$GITHUB_TOKEN@github.com/$ORG/$rel.git
+            cd $rel
             git submodule update --init --recursive
 
             # Create dev release tarball
@@ -137,7 +157,7 @@ jobs:
             if [[ -z "$JOB_NAME" ]]; then
               echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
               aws s3 cp "$DEV_TGZ" "s3://$S3_BUCKET/$rel/"
-              rm -rf "$WORKSPACE/$REPO_NAME" "$DEV_TGZ"
+              rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
               continue
             fi
 
@@ -182,5 +202,5 @@ jobs:
             done
 
             # Cleanup
-            rm -rf "$WORKSPACE/$REPO_NAME" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
+            rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
           done
