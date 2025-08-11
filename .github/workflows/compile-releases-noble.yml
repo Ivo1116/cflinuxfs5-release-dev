@@ -10,6 +10,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
+      GITHUB_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
       BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
     steps:
       # --- Checkout cf-deployment ---
@@ -102,7 +103,7 @@ jobs:
             echo "=== Building $rel for Noble ==="
 
             # Clone repo with submodules
-            git clone --recursive https://github.com/cloudfoundry/$rel.git
+            git clone --recursive https://$GITHUB_TOKEN@github.com/cloudfoundry/$rel.git
             cd $rel
             git submodule update --init --recursive
 
