@@ -12,6 +12,7 @@ jobs:
       AWS_REGION: us-east-1
       GITHUB_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
       BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
+
     steps:
       # --- Checkout cf-deployment ---
       - uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ivo1116/buildpacks-envs
-          ref:  main
+          ref: main
           path: bbl-state
           ssh-key: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
 
@@ -47,7 +48,7 @@ jobs:
           mkdir -p ../../deployment-source-config
           bbl print-env > ../../deployment-source-config/source_file.yml
 
-      # --- Setup BOSH env ---
+      # --- Install Ruby & Bundler ---
       - name: Install dependencies
         shell: bash
         run: |
@@ -74,7 +75,6 @@ jobs:
           source source_file.yml
           cd ..
 
-          # List of CF releases from cf-deployment
           RELEASES=(
             "bpm-release"
             "capi-release"
@@ -102,19 +102,15 @@ jobs:
           for rel in "${RELEASES[@]}"; do
             echo "=== Building $rel for Noble ==="
 
-            # Map release name to actual repo name if needed
-            case "$rel" in
-              cf-cli-release)
-                REPO_NAME="cli-release"
-                ;;
-              *)
-                REPO_NAME="$rel"
-                ;;
-            esac
+            # Skip cf-cli-release (no source repo, not tied to stemcell)
+            if [[ "$rel" == "cf-cli-release" ]]; then
+              echo "Skipping cf-cli-release — no source repo to build"
+              continue
+            fi
 
             # Clone repo with submodules
-            git clone --recursive https://$GITHUB_TOKEN@github.com/cloudfoundry/$REPO_NAME.git
-            cd $REPO_NAME
+            git clone --recursive https://$GITHUB_TOKEN@github.com/cloudfoundry/$rel.git
+            cd $rel
             git submodule update --init --recursive
 
             # Create dev release tarball
@@ -138,7 +134,7 @@ jobs:
             if [[ -z "$JOB_NAME" ]]; then
               echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
               aws s3 cp "$DEV_TGZ" "s3://$S3_BUCKET/$rel/"
-              rm -rf "$WORKSPACE/$REPO_NAME" "$DEV_TGZ"
+              rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
               continue
             fi
 
@@ -183,5 +179,5 @@ jobs:
             done
 
             # Cleanup
-            rm -rf "$WORKSPACE/$REPO_NAME" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
+            rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
           done
