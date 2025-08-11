@@ -88,18 +88,27 @@ jobs:
             echo "=== Building $rel for Noble ==="
             git clone https://github.com/cloudfoundry/$rel.git
             cd $rel
-            bosh create-release --force --version="dev.$(date +%s)"
-            bosh upload-release dev_releases/*/*.tgz --non-interactive
+
+            # Create tarball for dev release
+            DEV_TGZ="../${rel}-dev.tgz"
+            bosh create-release --force --version="dev.$(date +%s)" --tarball="$DEV_TGZ"
+
+            # Upload dev release to BOSH
+            cd ../deployment-source-config
+            source source_file.yml
+            cd ..
+            bosh upload-release "$DEV_TGZ" --non-interactive
 
             # Export compiled release for Noble stemcell
-            REL_NAME=$(bosh int config/final.yml --path /name || echo $rel)
-            REL_VER=$(bosh int dev_releases/*/index.yml --path /builds | grep version | tail -n 1 | awk '{print $2}')
-            bosh export-release $REL_NAME/$REL_VER ubuntu-noble/1.25 --dir ../compiled-releases
+            REL_NAME=$(bosh int $rel/config/final.yml --path /name || echo $rel)
+            REL_VER=$(bosh int $rel/config/dev.yml --path /dev_name || echo "dev")
+            bosh export-release "$REL_NAME/$REL_VER" ubuntu-noble/1.25 --dir compiled-releases
 
-            cd ..
             # Upload compiled release to S3
             for file in compiled-releases/*.tgz; do
-              aws s3 cp "$file" s3://my-noble-releases/$rel/
+              aws s3 cp "$file" "s3://my-noble-releases/$rel/"
             done
-            rm -rf $rel compiled-releases
+
+            # Cleanup
+            rm -rf $rel compiled-releases "$DEV_TGZ"
           done
