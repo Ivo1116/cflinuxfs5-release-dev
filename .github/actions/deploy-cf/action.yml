@@ -52,6 +52,13 @@ runs:
         path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
+    - uses: actions/checkout@v4
+      with:
+        repository: ivo1116/${{ inputs.stack }}-release
+        ref: main
+        path: ${{ inputs.stack }}-release
+        token: ${{ env.CFLINUXFS5_TOKEN }}
+
     - name: Download rootfs blob from S3
       shell: bash
       run: |
