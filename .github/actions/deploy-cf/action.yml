@@ -41,13 +41,6 @@ runs:
 
     - uses: actions/checkout@v4
       with:
-        repository: Ivo1116/capi-release
-        ref: develop
-        path: capi-release
-        submodules: recursive
-
-    - uses: actions/checkout@v4
-      with:
         repository: ${{ inputs.bbl_state_repo }}
         ref: ${{ inputs.bbl_state_branch }}
         path: bbl-state
@@ -130,16 +123,18 @@ runs:
         bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
         echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
 
-    # --- Build & Upload CAPI release ---
-    - name: Build and upload CAPI release
+    # --- Download & Upload prebuilt CAPI release ---
+    - name: Download CAPI release
+      shell: bash
+      run: wget -O capi-release.tgz https://bosh.io/d/github.com/cloudfoundry/capi-release?v=1.213.0
+
+    - name: Upload CAPI release to BOSH
       shell: bash
       run: |
-        cd capi-release
-        mkdir -p ../capi-release-artifacts
-        bosh create-release --force --tarball=../capi-release-artifacts/capi-dev.tgz
-        cd ../deployment-source-config
+        cd deployment-source-config
         source source_file.yml
-        bosh upload-release ../capi-release-artifacts/capi-dev.tgz --non-interactive
+        cd ..
+        bosh upload-release capi-release.tgz --non-interactive
 
     # --- Create ops files ---
     - name: Create ops files
@@ -153,12 +148,12 @@ runs:
             name: ${{ inputs.stack }}
             version: ${unique_version}
         EOF
-        cat > capi-release-artifacts/use-dev-release-opsfile.yml <<EOF
+        cat > capi-release-artifacts/use-prebuilt-capi.yml <<EOF
         - type: replace
           path: /releases/name=capi
           value:
             name: capi
-            version: 1.213.0+dev.1
+            version: 1.213.0
         EOF
 
     # --- Deploy CF ---
@@ -175,7 +170,7 @@ runs:
           --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
           --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
-          --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
+          --ops-file ../capi-release-artifacts/use-prebuilt-capi.yml \
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
         echo "success=true" >> $GITHUB_OUTPUT
