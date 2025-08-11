@@ -179,7 +179,7 @@ runs:
       run: |
         cd deployment-source-config
         source source_file.yml
-        bosh -d cf deploy ../cf-deployment/cf-deployment.yml \
+        bosh -n -d cf deploy ../cf-deployment/cf-deployment.yml \
           --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
           --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
           --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
