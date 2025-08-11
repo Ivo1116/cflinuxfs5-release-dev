@@ -102,17 +102,22 @@ jobs:
 
             # Detect a job name automatically from the tarball
             JOB_NAME=$(tar -tzf "$DEV_TGZ" | grep '^jobs/' | head -n 1 | cut -d/ -f2)
-            if [[ -z "$JOB_NAME" ]]; then
-              echo "ERROR: No jobs found in $REL_NAME — cannot compile"
-              exit 1
-            fi
-            echo "Using job '$JOB_NAME' for dummy manifest"
 
             # Upload dev release to BOSH
             cd ../deployment-source-config
             source source_file.yml
             cd "$WORKSPACE"
             bosh upload-release "$DEV_TGZ" --non-interactive
+
+            if [[ -z "$JOB_NAME" ]]; then
+              echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
+              # Just upload to S3 as source tarball (optional)
+              aws s3 cp "$DEV_TGZ" "s3://my-noble-releases/$rel/"
+              rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
+              continue
+            fi
+
+            echo "Using job '$JOB_NAME' for dummy manifest"
 
             # Create a dummy manifest to compile the release
             cat > dummy-manifest.yml <<EOF
