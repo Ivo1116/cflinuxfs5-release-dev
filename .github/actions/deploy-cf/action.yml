@@ -1,5 +1,5 @@
 name: 'Deploy CF'
-description: 'Deploy Cloud Foundry with new rootfs'
+description: 'Deploy Cloud Foundry with new rootfs from S3'
 
 inputs:
   stack:
@@ -41,19 +41,6 @@ runs:
 
     - uses: actions/checkout@v4
       with:
-        repository: cloudfoundry/buildpacks-ci
-        ref: master
-        path: buildpacks-ci
-
-    - uses: actions/checkout@v4
-      with:
-        repository: ivo1116/${{ inputs.stack }}-release
-        ref: main
-        path: ${{ inputs.stack }}-release
-        token: ${{ env.CFLINUXFS5_TOKEN }}
-
-    - uses: actions/checkout@v4
-      with:
         repository: Ivo1116/capi-release
         ref: develop
         path: capi-release
@@ -66,16 +53,15 @@ runs:
         path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
 
-    # --- Download rootfs from S3 ---
-    - name: Download rootfs from S3
-      uses: ./.github/actions/download-s3
-      with:
-        stack: ${{ inputs.stack }}
-        version: ${{ inputs.version }}
-        bucket-name: cflinuxfs5test
+    # --- Download rootfs release from S3 ---
+    - name: Download rootfs release from S3
+      shell: bash
+      run: |
+        aws s3 cp s3://cflinuxfs5test/${{ inputs.stack }}-${{ inputs.version }}.tgz ./rootfs-release.tgz
       env:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: us-east-1
 
     # --- Install BBL & BOSH ---
     - name: Install BBL & BOSH
@@ -86,19 +72,6 @@ runs:
         wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
         chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    # --- Prepare blobs using scripts ---
-    - name: Fetch rootfs blob
-      shell: bash
-      run: ${{ github.action_path }}/fetch-rootfs.sh ${{ inputs.stack }} ${{ inputs.version }}
-
-    - name: Fetch Go blob
-      shell: bash
-      run: ${{ github.action_path }}/fetch-go.sh ${{ inputs.stack }}
-
-    - name: Register blobs
-      shell: bash
-      run: ${{ github.action_path }}/register-blobs.sh ${{ inputs.stack }} ${{ inputs.version }}
-
     # --- Create deployment source config ---
     - name: Create deployment source config
       shell: bash
@@ -107,7 +80,7 @@ runs:
         mkdir -p ../../deployment-source-config
         bbl print-env > ../../deployment-source-config/source_file.yml
 
-    # --- Download & Upload stemcell ---
+    # --- Upload stemcell ---
     - name: Download GCP ubuntu-noble stemcell
       shell: bash
       run: wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
@@ -120,42 +93,14 @@ runs:
         cd ..
         bosh upload-stemcell gcp-stemcell.tgz --non-interactive
 
-    # --- Build & Upload rootfs release ---
-    - name: Build and upload rootfs release
-      shell: bash
-      run: |
-        cd ${{ inputs.stack }}-release
-        UNIQUE_VERSION="0+dev.$(date +%s)"
-        mkdir -p ../rootfs-release-artifacts
-        bosh create-release --force --version="$UNIQUE_VERSION" \
-          --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz \
-          --timestamp-version
-        echo "DEBUG: Checking release tarball for golang-1-linux blob"
-        tar -tzf ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz | grep golang-1-linux || echo "No golang-1-linux blob in tarball!"
-        cd ../deployment-source-config
-        source source_file.yml
-        bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
-        echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
-
-    # --- Deploy & Run rootfs smoke test ---
-    - name: Deploy rootfs smoke test
-      shell: bash
-      run: |
-        cd deployment-source-config
-        source source_file.yml
-        bosh -d rootfs-smoke-test deploy \
-          ../${{ inputs.stack }}-release/manifests/manifest.yml \
-          --var rootfs_version="${unique_version}" \
-          --vars-store smoke-test-vars.yml \
-          --non-interactive
-
-    - name: Run rootfs smoke test
+    # --- Upload rootfs release from S3 ---
+    - name: Upload rootfs release to BOSH
       shell: bash
       run: |
         cd deployment-source-config
         source source_file.yml
         cd ..
-        bosh -d rootfs-smoke-test run-errand smoke-tests
+        bosh upload-release ./rootfs-release.tgz --non-interactive
 
     # --- Build & Upload CAPI release ---
     - name: Create CAPI release
@@ -173,16 +118,16 @@ runs:
       shell: bash
       run: |
         mkdir -p rootfs-release-artifacts capi-release-artifacts
-        cat > rootfs-release-artifacts/use-dev-release-opsfile.yml <<EOF
+        cat > rootfs-release-artifacts/use-s3-release-opsfile.yml <<EOF
         - type: replace
-          path: /releases/-
+          path: /releases/name=${{ inputs.stack }}
           value:
             name: ${{ inputs.stack }}
-            version: ${unique_version}
+            version: ${{ inputs.version }}
         EOF
         cat > capi-release-artifacts/use-dev-release-opsfile.yml <<EOF
         - type: replace
-          path: /releases/-
+          path: /releases/name=capi
           value:
             name: capi
             version: 1.213.0+dev.1
@@ -201,7 +146,7 @@ runs:
           --ops-file ../cf-deployment/operations/use-compiled-releases.yml \
           --ops-file ../cf-deployment/operations/experimental/add-${{ inputs.stack }}.yml \
           --ops-file ../cf-deployment/operations/experimental/set-${{ inputs.stack }}-default-stack.yml \
-          --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
+          --ops-file ../rootfs-release-artifacts/use-s3-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-dev-release-opsfile.yml \
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
