@@ -100,6 +100,14 @@ jobs:
             REL_NAME=$(bosh int <(tar -xOf "$DEV_TGZ" release.MF) --path /name)
             REL_VER=$(bosh int <(tar -xOf "$DEV_TGZ" release.MF) --path /version)
 
+            # Detect a job name automatically from the tarball
+            JOB_NAME=$(tar -tzf "$DEV_TGZ" | grep '^jobs/' | head -n 1 | cut -d/ -f2)
+            if [[ -z "$JOB_NAME" ]]; then
+              echo "ERROR: No jobs found in $REL_NAME — cannot compile"
+              exit 1
+            fi
+            echo "Using job '$JOB_NAME' for dummy manifest"
+
             # Upload dev release to BOSH
             cd ../deployment-source-config
             source source_file.yml
@@ -108,26 +116,26 @@ jobs:
 
             # Create a dummy manifest to compile the release
             cat > dummy-manifest.yml <<EOF
-            ---
-            name: compile-$REL_NAME
-            releases:
-            - name: $REL_NAME
-              version: $REL_VER
-            stemcells:
-            - alias: default
-              os: ubuntu-noble
-              version: "1.25"
-            instance_groups:
-            - name: dummy
-              azs: [z1]
-              instances: 1
-              jobs:
-              - name: bpm
-                release: bpm
-              vm_type: default
-              stemcell: default
-              networks:
-              - name: default
+          ---
+          name: compile-$REL_NAME
+          releases:
+          - name: $REL_NAME
+            version: $REL_VER
+          stemcells:
+          - alias: default
+            os: ubuntu-noble
+            version: "1.25"
+          instance_groups:
+          - name: dummy
+            azs: [z1]
+            instances: 1
+            jobs:
+            - name: $JOB_NAME
+              release: $REL_NAME
+            vm_type: default
+            stemcell: default
+            networks:
+            - name: default
           EOF
 
             # Deploy dummy to trigger compilation
