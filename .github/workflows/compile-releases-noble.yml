@@ -52,7 +52,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ruby-full build-essential libssl-dev zlib1g-dev libpq-dev
-          gem install bundler --no-document
+          sudo gem install bundler --no-document
 
       # --- Upload Noble stemcell ---
       - name: Upload Noble stemcell
