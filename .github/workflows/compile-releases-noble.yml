@@ -80,7 +80,7 @@ jobs:
             "capi-release"
             "cf-cli-release"
             "cf-networking-release"
-            "credhub-release"
+            "credhub"
             "diego-release"
             "garden-runc-release"
             "log-cache-release"
