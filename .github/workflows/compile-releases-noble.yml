@@ -46,6 +46,14 @@ jobs:
           mkdir -p ../../deployment-source-config
           bbl print-env > ../../deployment-source-config/source_file.yml
 
+      # --- Setup BOSH env ---
+      - name: Install dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby-full build-essential libssl-dev zlib1g-dev libpq-dev
+          gem install bundler --no-document
+
       # --- Upload Noble stemcell ---
       - name: Upload Noble stemcell
         shell: bash
