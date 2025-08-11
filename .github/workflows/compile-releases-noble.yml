@@ -103,7 +103,6 @@ jobs:
           RELEASES=(
             "bpm-release"
             "capi-release"
-            "bosh-package-cf-cli-release"
             "cf-networking-release"
             "credhub-release"
             "diego-release"
