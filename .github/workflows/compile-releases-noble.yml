@@ -29,6 +29,7 @@ jobs:
 
       # --- Install BBL & BOSH ---
       - name: Install BBL & BOSH
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip awscli
@@ -39,6 +40,7 @@ jobs:
 
       # --- Setup BOSH env ---
       - name: Setup BOSH env
+        shell: bash
         run: |
           cd bbl-state/cflinuxfs5
           mkdir -p ../../deployment-source-config
@@ -46,6 +48,7 @@ jobs:
 
       # --- Upload Noble stemcell ---
       - name: Upload Noble stemcell
+        shell: bash
         run: |
           wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
           cd deployment-source-config
@@ -55,6 +58,7 @@ jobs:
 
       # --- Compile and upload all releases ---
       - name: Compile and upload releases
+        shell: bash
         run: |
           set -e
           cd deployment-source-config
