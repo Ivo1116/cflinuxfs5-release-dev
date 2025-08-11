@@ -57,7 +57,7 @@ runs:
     - name: Download rootfs release from S3
       shell: bash
       run: |
-        aws s3 cp s3://cflinuxfs5test/${{ inputs.stack }}-${{ inputs.version }}.tgz ./rootfs-release.tgz
+        aws s3 cp s3://cflinuxfs5test/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tgz ./rootfs-release.tgz
       env:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
