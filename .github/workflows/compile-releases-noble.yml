@@ -84,31 +84,31 @@ jobs:
             "uaa-release"
           )
 
+          WORKSPACE=$(pwd)
+
           for rel in "${RELEASES[@]}"; do
             echo "=== Building $rel for Noble ==="
             git clone https://github.com/cloudfoundry/$rel.git
             cd $rel
 
-            # Create tarball for dev release
-            DEV_TGZ="../${rel}-dev.tgz"
+            # Create tarball in workspace root
+            DEV_TGZ="$WORKSPACE/${rel}-dev.tgz"
             bosh create-release --force --version="dev.$(date +%s)" --tarball="$DEV_TGZ"
 
             # Upload dev release to BOSH
             cd ../deployment-source-config
             source source_file.yml
-            cd ..
+            cd "$WORKSPACE"
             bosh upload-release "$DEV_TGZ" --non-interactive
 
             # Export compiled release for Noble stemcell
-            REL_NAME=$(bosh int $rel/config/final.yml --path /name || echo $rel)
-            REL_VER=$(bosh int $rel/config/dev.yml --path /dev_name || echo "dev")
-            bosh export-release "$REL_NAME/$REL_VER" ubuntu-noble/1.25 --dir compiled-releases
+            bosh export-release "$rel/dev.$(date +%s)" ubuntu-noble/1.25 --dir "$WORKSPACE/compiled-releases"
 
             # Upload compiled release to S3
-            for file in compiled-releases/*.tgz; do
+            for file in "$WORKSPACE"/compiled-releases/*.tgz; do
               aws s3 cp "$file" "s3://my-noble-releases/$rel/"
             done
 
             # Cleanup
-            rm -rf $rel compiled-releases "$DEV_TGZ"
+            rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ"
           done
