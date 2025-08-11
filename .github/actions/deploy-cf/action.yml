@@ -1,5 +1,5 @@
 name: 'Deploy CF'
-description: 'Deploy Cloud Foundry with new rootfs from S3'
+description: 'Deploy Cloud Foundry with new rootfs from S3 and custom cflinuxfs5 stack'
 
 inputs:
   stack:
@@ -164,11 +164,15 @@ runs:
         EOF
         cat > custom-ops/set-${{ inputs.stack }}-default-stack.yml <<EOF
         - type: replace
-          path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/default_stack
-          value: ${{ inputs.stack }}
+          path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/stacks/-
+          value:
+            name: ${{ inputs.stack }}
+            description: Cloud Foundry Linux FS 5
+            build_rootfs: ${{ inputs.stack }}
+            run_rootfs: ${{ inputs.stack }}
+            default: true
         EOF
 
-    # --- Deploy CF with custom stack ---
     - name: Deploy CF
       id: deploy
       shell: bash
@@ -186,3 +190,20 @@ runs:
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
         echo "success=true" >> $GITHUB_OUTPUT
+
+    - name: Smoke test new stack
+      if: steps.deploy.outputs.success == 'true'
+      shell: bash
+      run: |
+        cd deployment-source-config
+        source source_file.yml
+        cf api https://${{ inputs.system_domain }} --skip-ssl-validation
+        cf auth admin $(bosh int cf-vars.yml --path /admin_password)
+        cf create-org test-org
+        cf target -o test-org
+        cf create-space test-space
+        cf target -s test-space
+        git clone https://github.com/cloudfoundry-samples/cf-sample-app-nodejs app
+        cd app
+        cf push test-app -b nodejs_buildpack -s ${{ inputs.stack }}
+        cf apps
