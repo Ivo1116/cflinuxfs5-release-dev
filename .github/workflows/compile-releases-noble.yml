@@ -92,8 +92,13 @@ jobs:
             cd $rel
 
             # Create tarball in workspace root
-            DEV_TGZ="$WORKSPACE/${rel}-dev.tgz"
-            bosh create-release --force --version="dev.$(date +%s)" --tarball="$DEV_TGZ"
+            UNIQUE_VERSION="dev.$(date +%s)"
+            DEV_TGZ="$WORKSPACE/${rel}-${UNIQUE_VERSION}.tgz"
+            bosh create-release --force --version="$UNIQUE_VERSION" --tarball="$DEV_TGZ"
+
+            # Extract release name and version from tarball
+            REL_NAME=$(bosh int <(tar -xOf "$DEV_TGZ" release.MF) --path /name)
+            REL_VER=$(bosh int <(tar -xOf "$DEV_TGZ" release.MF) --path /version)
 
             # Upload dev release to BOSH
             cd ../deployment-source-config
@@ -101,8 +106,8 @@ jobs:
             cd "$WORKSPACE"
             bosh upload-release "$DEV_TGZ" --non-interactive
 
-            # Export compiled release for Noble stemcell from tarball
-            bosh export-release "$DEV_TGZ" ubuntu-noble/1.25 --dir "$WORKSPACE/compiled-releases"
+            # Export compiled release for Noble stemcell
+            bosh export-release "$REL_NAME/$REL_VER" ubuntu-noble/1.25 --dir "$WORKSPACE/compiled-releases"
 
             # Upload compiled release to S3
             for file in "$WORKSPACE"/compiled-releases/*.tgz; do
