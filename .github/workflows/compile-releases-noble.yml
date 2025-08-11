@@ -85,13 +85,20 @@ jobs:
           )
 
           WORKSPACE=$(pwd)
+          S3_BUCKET="cflinuxfs5test/noble-releases"
+
+          # Ensure S3 bucket exists
+          aws s3 mb s3://$(echo $S3_BUCKET | cut -d/ -f1) --region $AWS_REGION || true
 
           for rel in "${RELEASES[@]}"; do
             echo "=== Building $rel for Noble ==="
-            git clone https://github.com/cloudfoundry/$rel.git
-            cd $rel
 
-            # Create tarball in workspace root
+            # Clone repo with submodules
+            git clone --recursive https://github.com/cloudfoundry/$rel.git
+            cd $rel
+            git submodule update --init --recursive
+
+            # Create dev release tarball
             UNIQUE_VERSION="dev.$(date +%s)"
             DEV_TGZ="$WORKSPACE/${rel}-${UNIQUE_VERSION}.tgz"
             bosh create-release --force --version="$UNIQUE_VERSION" --tarball="$DEV_TGZ"
@@ -111,15 +118,14 @@ jobs:
 
             if [[ -z "$JOB_NAME" ]]; then
               echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
-              # Just upload to S3 as source tarball (optional)
-              aws s3 cp "$DEV_TGZ" "s3://cflinuxfs5test/noble-releases/$rel/"
+              aws s3 cp "$DEV_TGZ" "s3://$S3_BUCKET/$rel/"
               rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
               continue
             fi
 
             echo "Using job '$JOB_NAME' for dummy manifest"
 
-            # Create a dummy manifest to compile the release
+            # Create dummy manifest to trigger compilation
             cat > dummy-manifest.yml <<EOF
           ---
           name: compile-$REL_NAME
@@ -154,7 +160,7 @@ jobs:
 
             # Upload compiled release to S3
             for file in "$WORKSPACE"/compiled-releases/*.tgz; do
-              aws s3 cp "$file" "s3://my-noble-releases/$rel/"
+              aws s3 cp "$file" "s3://$S3_BUCKET/$rel/"
             done
 
             # Cleanup
