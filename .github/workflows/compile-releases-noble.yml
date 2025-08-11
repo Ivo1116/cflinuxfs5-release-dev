@@ -102,9 +102,19 @@ jobs:
           for rel in "${RELEASES[@]}"; do
             echo "=== Building $rel for Noble ==="
 
+            # Map release name to actual repo name if needed
+            case "$rel" in
+              cf-cli-release)
+                REPO_NAME="cli-release"
+                ;;
+              *)
+                REPO_NAME="$rel"
+                ;;
+            esac
+
             # Clone repo with submodules
-            git clone --recursive https://$GITHUB_TOKEN@github.com/cloudfoundry/$rel.git
-            cd $rel
+            git clone --recursive https://$GITHUB_TOKEN@github.com/cloudfoundry/$REPO_NAME.git
+            cd $REPO_NAME
             git submodule update --init --recursive
 
             # Create dev release tarball
@@ -128,7 +138,7 @@ jobs:
             if [[ -z "$JOB_NAME" ]]; then
               echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
               aws s3 cp "$DEV_TGZ" "s3://$S3_BUCKET/$rel/"
-              rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
+              rm -rf "$WORKSPACE/$REPO_NAME" "$DEV_TGZ"
               continue
             fi
 
@@ -173,5 +183,5 @@ jobs:
             done
 
             # Cleanup
-            rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
+            rm -rf "$WORKSPACE/$REPO_NAME" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
           done
