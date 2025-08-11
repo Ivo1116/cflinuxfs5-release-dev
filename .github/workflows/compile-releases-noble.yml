@@ -101,8 +101,8 @@ jobs:
             cd "$WORKSPACE"
             bosh upload-release "$DEV_TGZ" --non-interactive
 
-            # Export compiled release for Noble stemcell
-            bosh export-release "$rel/dev.$(date +%s)" ubuntu-noble/1.25 --dir "$WORKSPACE/compiled-releases"
+            # Export compiled release for Noble stemcell from tarball
+            bosh export-release "$DEV_TGZ" ubuntu-noble/1.25 --dir "$WORKSPACE/compiled-releases"
 
             # Upload compiled release to S3
             for file in "$WORKSPACE"/compiled-releases/*.tgz; do
