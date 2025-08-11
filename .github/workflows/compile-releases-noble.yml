@@ -112,7 +112,7 @@ jobs:
             if [[ -z "$JOB_NAME" ]]; then
               echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
               # Just upload to S3 as source tarball (optional)
-              aws s3 cp "$DEV_TGZ" "s3://my-noble-releases/$rel/"
+              aws s3 cp "$DEV_TGZ" "s3://cflinuxfs5test/noble-releases/$rel/"
               rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
               continue
             fi
