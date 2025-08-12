@@ -173,7 +173,6 @@ runs:
             default: true
         EOF
 
-    # --- Generate Noble compiled releases ops file ---
     - name: Generate Noble compiled releases ops file
       shell: bash
       run: |
@@ -181,6 +180,16 @@ runs:
         ${{ github.action_path }}/create-ops-file.sh
         ls -R $GITHUB_WORKSPACE
         pwd 
+
+
+    - name: Use noble stemcell
+      shell: bash
+      run: |
+        cat > use-noble-stemcell.yml <<EOF
+        - type: replace
+          path: /stemcells/0/os
+          value: ubuntu-noble
+        EOF
 
     # --- Deploy CF ---
     - name: Deploy CF
@@ -197,6 +206,7 @@ runs:
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-prebuilt-capi.yml \
           --ops-file ../use-compiled-releases-noble.yml \
+          --ops-file ../use-noble-stemcell.yml \
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
         echo "success=true" >> $GITHUB_OUTPUT
