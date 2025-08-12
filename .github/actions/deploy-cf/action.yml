@@ -183,7 +183,7 @@ runs:
     - name: Use noble stemcell
       shell: bash
       run: |
-        cat > use-noble-stemcell.yml <<EOF
+        cat > use-noble-stemcell.yml <<'EOF'
         - type: replace
           path: /stemcells/0/os
           value: ubuntu-noble
