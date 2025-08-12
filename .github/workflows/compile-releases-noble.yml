@@ -114,6 +114,7 @@ jobs:
             "statsd-injector-release"
             "syslog-release"
           )
+
           # Manifest file for compiled releases
           COMPILED_LIST="$WORKSPACE/compiled-releases-list.txt"
           > "$COMPILED_LIST"
@@ -218,3 +219,32 @@ jobs:
           # Print compiled releases list
           echo "=== Compiled Noble Releases in S3 ==="
           cat "$COMPILED_LIST"
+
+          # Generate Noble compiled releases ops file
+          OPS_FILE="$WORKSPACE/use-compiled-releases-noble.yml"
+          > "$OPS_FILE"
+
+          while read -r rel_name s3_path; do
+            # Extract version from filename
+            file_name=$(basename "$s3_path")
+            version=$(echo "$file_name" | sed -E 's/.*-dev\.([0-9]+)\.tgz/dev.\1/')
+
+            # Get sha1 from S3
+            tmp_file=$(mktemp)
+            aws s3 cp "$s3_path" "$tmp_file" >/dev/null
+            sha1=$(sha1sum "$tmp_file" | awk '{print $1}')
+            rm "$tmp_file"
+
+            cat >> "$OPS_FILE" <<EOF
+          - type: replace
+            path: /releases/name=$rel_name
+            value:
+              name: $rel_name
+              version: $version
+              url: $s3_path
+              sha1: $sha1
+          EOF
+          done < "$COMPILED_LIST"
+
+          echo "=== Noble compiled releases ops file generated: $OPS_FILE ==="
+          cat "$OPS_FILE"
