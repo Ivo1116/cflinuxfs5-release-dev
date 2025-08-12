@@ -189,14 +189,31 @@ runs:
           value: ubuntu-noble
         EOF
 
-    # --- Update Cloud Config from BBL ---
-    - name: Update Cloud Config for GCP
+
+    # --- Patch Cloud Config to add missing vm_extension ---
+    - name: Patch Cloud Config
       shell: bash
       run: |
+        # Create an ops file to add diego-ssh-proxy-network-properties if missing
+        cat > add-diego-ssh-proxy-vm-extension.yml <<'EOF'
+        - type: replace
+          path: /vm_extensions/-
+          value:
+            name: diego-ssh-proxy-network-properties
+            cloud_properties: {}
+        EOF
+    
+        # Target BOSH
         cd deployment-source-config
         source source_file.yml
         cd ..
-        bosh update-cloud-config cf-deployment/iaas-support/gcp/cloud-config.yml
+    
+        # Download current cloud-config from BOSH
+        bosh cloud-config > current-cloud-config.yml
+    
+        # Upload updated cloud-config with the new vm_extension
+        bosh update-cloud-config current-cloud-config.yml \
+          --ops-file add-diego-ssh-proxy-vm-extension.yml
 
     # --- Deploy CF ---
     - name: Deploy CF
