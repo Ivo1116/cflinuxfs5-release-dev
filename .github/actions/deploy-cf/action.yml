@@ -178,8 +178,6 @@ runs:
       run: |
         chmod +x ${{ github.action_path }}/create-ops-file.sh
         ${{ github.action_path }}/create-ops-file.sh
-        ls -R $GITHUB_WORKSPACE
-        pwd 
 
 
     - name: Use noble stemcell
@@ -192,14 +190,13 @@ runs:
         EOF
 
     # --- Update Cloud Config from BBL ---
-    - name: Update Cloud Config
+    - name: Update Cloud Config for GCP
       shell: bash
       run: |
-        cd bbl-state/${{ inputs.stack }}
-        bbl print-cloud-config > ../../deployment-source-config/cloud-config.yml
-        cd ../../deployment-source-config
+        cd deployment-source-config
         source source_file.yml
-        bosh update-cloud-config cloud-config.yml
+        cd ..
+        bosh update-cloud-config cf-deployment/iaas-support/gcp/cloud-config.yml
 
     # --- Deploy CF ---
     - name: Deploy CF
