@@ -113,7 +113,6 @@ jobs:
             "silk-release"
             "statsd-injector-release"
             "syslog-release"
-            "uaa-release"
           )
 
           for rel in "${RELEASES[@]}"; do
