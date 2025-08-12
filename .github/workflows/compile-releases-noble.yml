@@ -114,9 +114,18 @@ jobs:
             "statsd-injector-release"
             "syslog-release"
           )
+          # Manifest file for compiled releases
+          COMPILED_LIST="$WORKSPACE/compiled-releases-list.txt"
+          > "$COMPILED_LIST"
 
           for rel in "${RELEASES[@]}"; do
             echo "=== Building $rel for Noble ==="
+
+            # Skip binary/Java-only releases
+            if [[ "$rel" == "bosh-package-cf-cli-release" || "$rel" == "uaa-release" ]]; then
+              echo "Skipping $rel — binary/Java-only, no Noble compilation needed"
+              continue
+            fi
 
             # Map org for special cases
             case "$rel" in
@@ -153,7 +162,9 @@ jobs:
 
             if [[ -z "$JOB_NAME" ]]; then
               echo "No jobs found in $REL_NAME — skipping dummy deployment and export"
-              aws s3 cp "$DEV_TGZ" "s3://$S3_BUCKET/$rel/"
+              S3_PATH="s3://$S3_BUCKET/$rel/$(basename "$DEV_TGZ")"
+              aws s3 cp "$DEV_TGZ" "$S3_PATH"
+              echo "$REL_NAME $S3_PATH" >> "$COMPILED_LIST"
               rm -rf "$WORKSPACE/$rel" "$DEV_TGZ"
               continue
             fi
@@ -193,11 +204,17 @@ jobs:
             # Delete dummy deployment
             bosh -n -d compile-$REL_NAME delete-deployment
 
-            # Upload compiled release to S3
+            # Upload compiled release to S3 and record it
             for file in "$WORKSPACE"/compiled-releases/*.tgz; do
-              aws s3 cp "$file" "s3://$S3_BUCKET/$rel/"
+              S3_PATH="s3://$S3_BUCKET/$rel/$(basename "$file")"
+              aws s3 cp "$file" "$S3_PATH"
+              echo "$REL_NAME $S3_PATH" >> "$COMPILED_LIST"
             done
 
             # Cleanup
             rm -rf "$WORKSPACE/$rel" "$WORKSPACE/compiled-releases" "$DEV_TGZ" dummy-manifest.yml
           done
+
+          # Print compiled releases list
+          echo "=== Compiled Noble Releases in S3 ==="
+          cat "$COMPILED_LIST"
