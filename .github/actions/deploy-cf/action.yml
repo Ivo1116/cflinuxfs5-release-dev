@@ -173,6 +173,14 @@ runs:
             default: true
         EOF
 
+    # --- Generate Noble compiled releases ops file ---
+    - name: Generate Noble compiled releases ops file
+      shell: bash
+      run: |
+        chmod +x ${{ github.action_path }}/create-ops-file.sh
+        ${{ github.action_path }}/create-ops-file.sh
+
+    # --- Deploy CF ---
     - name: Deploy CF
       id: deploy
       shell: bash
@@ -186,10 +194,12 @@ runs:
           --ops-file ../custom-ops/set-${{ inputs.stack }}-default-stack.yml \
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-prebuilt-capi.yml \
+          --ops-file ../use-compiled-releases-noble.yml \
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
         echo "success=true" >> $GITHUB_OUTPUT
 
+    # --- Smoke test new stack ---
     - name: Smoke test new stack
       if: steps.deploy.outputs.success == 'true'
       shell: bash
