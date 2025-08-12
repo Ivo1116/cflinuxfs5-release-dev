@@ -79,13 +79,6 @@ cat >"$OPS_FILE" <<'EOF'
     version: dev.1754985748
     url: s3://cflinuxfs5test/noble-releases/statsd-injector-release/statsd-injector-release-dev.1754985748.tgz
     sha1: 0d72fa9b6d9daaa2af1b6772c707a510ff05e30b
-- type: replace
-  path: /releases/name=syslog
-  value:
-    name: syslog
-    version: dev.1754985759
-    url: s3://cflinuxfs5test/noble-releases/syslog-release/syslog-release-dev.1754985759.tgz
-    sha1: 357e69976ab5a3fe4c90f0f31366bc1578b43f5b
 EOF
 
 echo "=== Noble compiled releases ops file generated: $OPS_FILE ==="
