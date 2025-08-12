@@ -178,6 +178,7 @@ runs:
       shell: bash
       run: |
         chmod +x ${{ github.action_path }}/create-ops-file.sh
+        ${{ github.action_path }}/create-ops-file.sh
         ls -R $GITHUB_WORKSPACE
         pwd 
 
