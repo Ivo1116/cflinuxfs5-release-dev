@@ -178,6 +178,8 @@ runs:
       shell: bash
       run: |
         chmod +x ${{ github.action_path }}/create-ops-file.sh
+        ls -R $GITHUB_WORKSPACE
+        pwd 
 
     # --- Deploy CF ---
     - name: Deploy CF
