@@ -213,7 +213,8 @@ runs:
     
         # Upload updated cloud-config with the new vm_extension
         bosh update-cloud-config current-cloud-config.yml \
-          --ops-file add-diego-ssh-proxy-vm-extension.yml
+          --ops-file add-diego-ssh-proxy-vm-extension.yml \
+          --non-interactive
 
     # --- Deploy CF ---
     - name: Deploy CF
