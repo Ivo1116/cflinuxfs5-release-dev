@@ -1,5 +1,5 @@
 # Hardcode Noble compiled releases ops file
-OPS_FILE="$WORKSPACE/use-compiled-releases-noble.yml"
+OPS_FILE="${GITHUB_WORKSPACE}/use-compiled-releases-noble.yml"
 
 cat >"$OPS_FILE" <<'EOF'
 - type: replace
