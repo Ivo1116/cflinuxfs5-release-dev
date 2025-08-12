@@ -194,27 +194,27 @@ runs:
     - name: Patch Cloud Config
       shell: bash
       run: |
-        # Create an ops file to add diego-ssh-proxy-network-properties if missing
-        cat > add-diego-ssh-proxy-vm-extension.yml <<'EOF'
-        - type: replace
-          path: /vm_extensions/-
-          value:
-            name: diego-ssh-proxy-network-properties
-            cloud_properties: {}
-        EOF
-    
-        # Target BOSH
         cd deployment-source-config
         source source_file.yml
         cd ..
-    
-        # Download current cloud-config from BOSH
-        bosh cloud-config > current-cloud-config.yml
-    
-        # Upload updated cloud-config with the new vm_extension
-        bosh update-cloud-config current-cloud-config.yml \
-          --ops-file add-diego-ssh-proxy-vm-extension.yml \
-          --non-interactive
+
+        # Check if the extension already exists
+        if bosh cloud-config | grep -q "name: diego-ssh-proxy-network-properties"; then
+          echo "vm_extension already exists, skipping patch."
+        else
+          echo "Adding missing vm_extension..."
+          cat > add-diego-ssh-proxy-vm-extension.yml <<'EOF'
+          - type: replace
+            path: /vm_extensions/-
+            value:
+              name: diego-ssh-proxy-network-properties
+              cloud_properties: {}
+          EOF
+          bosh cloud-config > current-cloud-config.yml
+          bosh update-cloud-config current-cloud-config.yml \
+            --ops-file add-diego-ssh-proxy-vm-extension.yml \
+            --non-interactive
+        fi
 
     # --- Deploy CF ---
     - name: Deploy CF
