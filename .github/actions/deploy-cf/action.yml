@@ -191,6 +191,16 @@ runs:
           value: ubuntu-noble
         EOF
 
+    # --- Update Cloud Config from BBL ---
+    - name: Update Cloud Config
+      shell: bash
+      run: |
+        cd bbl-state/${{ inputs.stack }}
+        bbl print-cloud-config > ../../deployment-source-config/cloud-config.yml
+        cd ../../deployment-source-config
+        source source_file.yml
+        bosh update-cloud-config cloud-config.yml
+
     # --- Deploy CF ---
     - name: Deploy CF
       id: deploy
@@ -206,7 +216,6 @@ runs:
           --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
           --ops-file ../capi-release-artifacts/use-prebuilt-capi.yml \
           --ops-file ../use-compiled-releases-noble.yml \
-          --ops-file ../use-noble-stemcell.yml \
           --var system_domain='${{ inputs.system_domain }}' \
           --vars-store cf-vars.yml
         echo "success=true" >> $GITHUB_OUTPUT
