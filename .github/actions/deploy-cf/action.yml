@@ -204,12 +204,12 @@ runs:
         else
           echo "Adding missing vm_extension..."
           cat > add-diego-ssh-proxy-vm-extension.yml <<'EOF'
-          - type: replace
-            path: /vm_extensions/-
-            value:
-              name: diego-ssh-proxy-network-properties
-              cloud_properties: {}
-          EOF
+        - type: replace
+          path: /vm_extensions/-
+          value:
+            name: diego-ssh-proxy-network-properties
+            cloud_properties: {}
+        EOF
           bosh cloud-config > current-cloud-config.yml
           bosh update-cloud-config current-cloud-config.yml \
             --ops-file add-diego-ssh-proxy-vm-extension.yml \
