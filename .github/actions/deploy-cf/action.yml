@@ -183,8 +183,10 @@ runs:
       shell: bash
       run: |
         cd bbl-state/${{ inputs.stack }}
-        # Pre-accept jumpbox host key
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
         ssh-keyscan -H 35.222.206.29 >> ~/.ssh/known_hosts
+        chmod 644 ~/.ssh/known_hosts
         bbl ssh --director <<'EOF'
         mkdir -p ~/.aws
         cat > ~/.aws/credentials <<EOC
