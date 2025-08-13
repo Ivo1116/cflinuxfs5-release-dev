@@ -183,7 +183,7 @@ runs:
       shell: bash
       run: |
         cd bbl-state/${{ inputs.stack }}
-        BBL_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+        export BBL_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         bbl ssh --director <<'EOF'
         mkdir -p ~/.aws
         cat > ~/.aws/credentials <<EOC
