@@ -179,6 +179,25 @@ runs:
         chmod +x ${{ github.action_path }}/create-ops-file.sh
         ${{ github.action_path }}/create-ops-file.sh
 
+    - name: Set AWS creds on Director
+      shell: bash
+      run: |
+        cd bbl-state/${{ inputs.stack }}
+        bbl ssh --director <<'EOF'
+        mkdir -p ~/.aws
+        cat > ~/.aws/credentials <<EOC
+        [default]
+        aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+        aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+        EOC
+        cat > ~/.aws/config <<EOC
+        [default]
+        region = us-east-1
+        EOC
+        EOF
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
     - name: Use noble stemcell
       shell: bash
