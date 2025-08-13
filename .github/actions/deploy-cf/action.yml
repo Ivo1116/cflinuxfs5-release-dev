@@ -183,7 +183,8 @@ runs:
       shell: bash
       run: |
         cd bbl-state/${{ inputs.stack }}
-        export BBL_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        # Pre-accept jumpbox host key
+        ssh-keyscan -H 35.222.206.29 >> ~/.ssh/known_hosts
         bbl ssh --director <<'EOF'
         mkdir -p ~/.aws
         cat > ~/.aws/credentials <<EOC
