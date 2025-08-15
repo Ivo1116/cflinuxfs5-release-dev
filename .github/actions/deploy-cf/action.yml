@@ -263,10 +263,8 @@ runs:
       run: |
         set -euo pipefail
         pushd work/cflinuxfs5-release >/dev/null
-          # Download all missing blobs
+          # No private.yml needed — credentials come from env vars
           bosh sync-blobs
-
-          # Now create the release tarball
           bosh create-release --timestamp-version --force \
             --tarball "../cflinuxfs5-release.tgz"
         popd >/dev/null
