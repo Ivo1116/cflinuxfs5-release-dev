@@ -1,248 +1,270 @@
-name: 'Deploy CF'
-description: 'Deploy Cloud Foundry with new rootfs from S3 and custom cflinuxfs5 stack'
-
+name: Deploy CF with cflinuxfs5
+description: Deploy Cloud Foundry to a bbl environment using the cflinuxfs5 stack
 inputs:
-  stack:
-    description: 'Stack name (e.g., cflinuxfs5)'
+  env_name:
+    description: bbl environment name (state dir under the bbl-state repo)
     required: true
   version:
-    description: 'Rootfs version number (e.g., 1.0.0-rc.1)'
+    description: cflinuxfs5 version (e.g., 1.0.0-rc.1)
     required: true
-  env_name:
-    description: 'Environment name for BBL'
-    required: false
-    default: 'cflinuxfs5'
-  system_domain:
-    description: 'CF system domain'
-    required: false
-    default: 'cflinuxfs5.buildpacks-gcp.ci.cf-app.com'
   bbl_state_repo:
-    description: 'Repo for BBL state (owner/repo)'
+    description: Repo holding bbl state (owner/repo)
     required: true
   bbl_state_branch:
-    description: 'Branch for BBL state'
+    description: Branch of the bbl state repo
+    required: true
+    default: main
+  system_domain:
+    description: Overrides default "<env_name>.buildpacks-gcp.ci.cf-app.com"
     required: false
-    default: 'main'
-
+    default: ""
 outputs:
   success:
-    description: 'Whether CF deployment succeeded'
-    value: ${{ steps.deploy.outputs.success }}
-
+    description: true if deploy completed successfully
+    value: ${{ steps.done.outputs.success }}
 runs:
-  using: 'composite'
+  using: composite
   steps:
-    # --- Checkout required repos ---
-    - uses: actions/checkout@v4
-      with:
-        repository: cloudfoundry/cf-deployment
-        ref: v21.11.0
-        path: cf-deployment
+    - name: Compute config
+      id: cfg
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Constants (change here if your bucket or repos move)
+        echo "rootfs_bucket=cflinuxfs5test" >> "$GITHUB_OUTPUT"
+        echo "rootfs_prefix=rootfs" >> "$GITHUB_OUTPUT"
+        echo "release_repo=ivo1116/cflinuxfs5-release" >> "$GITHUB_OUTPUT"
+        echo "release_ref=main" >> "$GITHUB_OUTPUT"
+        echo "cf_repo=cloudfoundry/cf-deployment" >> "$GITHUB_OUTPUT"
+        echo "cf_ref=main" >> "$GITHUB_OUTPUT"
 
-    - uses: actions/checkout@v4
+        if [[ -n "${{ inputs.system_domain }}" ]]; then
+          DOMAIN="${{ inputs.system_domain }}"
+        else
+          DOMAIN="${{ inputs.env_name }}.buildpacks-gcp.ci.cf-app.com"
+        fi
+        echo "system_domain=${DOMAIN}" >> "$GITHUB_OUTPUT"
+
+        # State dir equals env_name (as created by your bbl-up action)
+        echo "bbl_dir=${{ inputs.env_name }}" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout bbl state repo
+      uses: actions/checkout@v4
       with:
         repository: ${{ inputs.bbl_state_repo }}
         ref: ${{ inputs.bbl_state_branch }}
-        path: bbl-state
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
+        path: bbl-state
 
-    - uses: actions/checkout@v4
+    - name: Checkout cf-deployment
+      uses: actions/checkout@v4
       with:
-        repository: ivo1116/${{ inputs.stack }}-release
-        ref: main
-        path: ${{ inputs.stack }}-release
-        token: ${{ env.CFLINUXFS5_TOKEN }}
+        repository: ${{ steps.cfg.outputs.cf_repo }}
+        ref: ${{ steps.cfg.outputs.cf_ref }}
+        path: cf-deployment
 
-    # --- Download rootfs blob from S3 ---
-    - name: Download rootfs blob from S3
+    - name: Setup tools (bosh, bbl, awscli, jq, yq)
       shell: bash
       run: |
-        mkdir -p rootfs-artifacts
-        aws s3 cp s3://cflinuxfs5test/rootfs/${{ inputs.stack }}-${{ inputs.version }}.tar.gz \
-          rootfs-artifacts/${{ inputs.stack }}-${{ inputs.version }}.tar.gz
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y jq unzip curl python3-pip
+        pip3 install --user awscli
+        echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+
+        BOSH_VERSION="7.6.2"
+        curl -L \
+          "https://github.com/cloudfoundry/bosh-cli/releases/download/v${BOSH_VERSION}/bosh-cli-${BOSH_VERSION}-linux-amd64" \
+          -o bosh
+        sudo install -m 0755 bosh /usr/local/bin/bosh
+
+        BBL_VERSION="$(curl -s \
+          https://api.github.com/repos/cloudfoundry/bosh-bootloader/releases/latest \
+          | jq -r .tag_name | sed 's/^v//')"
+        curl -L \
+          "https://github.com/cloudfoundry/bosh-bootloader/releases/download/v${BBL_VERSION}/bbl-v${BBL_VERSION}_linux_x86-64" \
+          -o bbl
+        sudo install -m 0755 bbl /usr/local/bin/bbl
+
+        YQ_VERSION="4.44.3"
+        curl -L \
+          "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
+          -o yq
+        sudo install -m 0755 yq /usr/local/bin/yq
+
+    - name: Set BOSH env via bbl
+      shell: bash
+      env:
+        GCP_SERVICE_ACCOUNT_KEY: ${{ env.GCP_SERVICE_ACCOUNT_KEY }}
+      run: |
+        set -euo pipefail
+        pushd "bbl-state/${{ steps.cfg.outputs.bbl_dir }}" >/dev/null
+          if [[ -n "${GCP_SERVICE_ACCOUNT_KEY:-}" ]]; then
+            mkdir -p "${HOME}/.gcp"
+            echo "${GCP_SERVICE_ACCOUNT_KEY}" > "${HOME}/.gcp/key.json"
+            export GOOGLE_CREDENTIALS="${HOME}/.gcp/key.json"
+          fi
+          eval "$(bbl print-env)"
+        popd >/dev/null
+        bosh env
+
+    - name: Delete existing CF (ignore errors)
+      shell: bash
+      run: |
+        set -euo pipefail
+        bosh -d cf delete-deployment --force || true
+
+    - name: Prepare workspace
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p work
+        echo "${{ inputs.version }}" > work/version.txt
+
+    - name: Download rootfs tarball from S3
+      shell: bash
       env:
         AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: us-east-1
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.version }}"
+        BUCKET="${{ steps.cfg.outputs.rootfs_bucket }}"
+        PREFIX="${{ steps.cfg.outputs.rootfs_prefix }}"
+        SRC="s3://${BUCKET}/${PREFIX}/cflinuxfs5-${VERSION}.tar.gz"
+        echo "Downloading ${SRC}"
+        aws s3 cp "${SRC}" "work/cflinuxfs5-${VERSION}.tar.gz"
 
-    # --- Install BBL & BOSH ---
-    - name: Install BBL & BOSH
+    - name: Clone cflinuxfs5-release
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.cfg.outputs.release_repo }}
+        ref: ${{ steps.cfg.outputs.release_ref }}
+        path: work/cflinuxfs5-release
+        token: ${{ env.CFLINUXFS5_TOKEN }}
+
+    - name: Add rootfs tarball as blob (auto-detect path from packages/*/spec)
+      id: addblob
       shell: bash
       run: |
-        wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
-        chmod +x /tmp/bbl && sudo mv /tmp/bbl /usr/local/bin/bbl
-        wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
-        chmod +x /tmp/bosh && sudo mv /tmp/bosh /usr/local/bin/bosh
+        set -euo pipefail
+        VERSION="${{ inputs.version }}"
+        REL="work/cflinuxfs5-release"
 
-    # --- Prepare blobs ---
-    - name: Fetch Go blob
-      shell: bash
-      run: ${{ github.action_path }}/fetch-go.sh ${{ inputs.stack }}
+        mapfile -t SPECS < <(find "${REL}/packages" -type f -name spec)
+        if [[ ${#SPECS[@]} -eq 0 ]]; then
+          echo "No package spec files found in ${REL}/packages"
+          exit 1
+        fi
 
-    - name: Fetch rootfs blob
-      shell: bash
-      run: ${{ github.action_path }}/fetch-rootfs.sh ${{ inputs.stack }} ${{ inputs.version }}
+        DECL_PATH=""
+        for spec in "${SPECS[@]}"; do
+          if yq -r '.files[]? // empty' "$spec" \
+            | grep -Eq 'cflinuxfs5-.*\.tar\.gz'; then
+            DECL_PATH="$(yq -r '.files[]? // empty' "$spec" \
+              | grep -E 'cflinuxfs5-.*\.tar\.gz' | head -n1)"
+            break
+          fi
+        done
 
-    - name: Register blobs
-      shell: bash
-      run: ${{ github.action_path }}/register-blobs.sh ${{ inputs.stack }} ${{ inputs.version }}
+        if [[ -z "${DECL_PATH}" ]]; then
+          echo "Could not find declared cflinuxfs5-*.tar.gz file in any spec"
+          exit 1
+        fi
 
-    # --- Create deployment source config ---
-    - name: Create deployment source config
-      shell: bash
-      run: |
-        cd bbl-state/${{ inputs.stack }}
-        mkdir -p ../../deployment-source-config
-        bbl print-env > ../../deployment-source-config/source_file.yml
+        DIR="$(dirname "${DECL_PATH}")"
+        if [[ "${DIR}" == "." ]]; then
+          BLOB_PATH="cflinuxfs5-${VERSION}.tar.gz"
+        else
+          BLOB_PATH="${DIR}/cflinuxfs5-${VERSION}.tar.gz"
+        fi
+        echo "Using blob path: ${BLOB_PATH}"
 
-    # --- Download & Upload stemcell ---
-    - name: Download GCP ubuntu-noble stemcell
-      shell: bash
-      run: wget -O gcp-stemcell.tgz "https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble?v=1.25"
+        pushd "${REL}" >/dev/null
+          bosh add-blob "../cflinuxfs5-${VERSION}.tar.gz" "${BLOB_PATH}"
+        popd >/dev/null
+        echo "blob_path=${BLOB_PATH}" >> "$GITHUB_OUTPUT"
 
-    - name: Upload stemcell to BOSH
-      shell: bash
-      run: |
-        cd deployment-source-config
-        source source_file.yml
-        cd ..
-        bosh upload-stemcell gcp-stemcell.tgz --non-interactive
-
-    # --- Build & Upload rootfs release ---
-    - name: Build and upload rootfs release
+    - name: Create dev BOSH release tarball
       shell: bash
       run: |
-        cd ${{ inputs.stack }}-release
-        UNIQUE_VERSION="${{ inputs.version }}+dev.$(date +%s)"
-        mkdir -p ../rootfs-release-artifacts
-        bosh create-release --force --version="$UNIQUE_VERSION" \
-          --tarball=../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz \
-          --timestamp-version
-        cd ../deployment-source-config
-        source source_file.yml
-        bosh upload-release ../rootfs-release-artifacts/${{ inputs.stack }}-dev-$UNIQUE_VERSION.tgz --non-interactive
-        echo "unique_version=$UNIQUE_VERSION" >> $GITHUB_ENV
+        set -euo pipefail
+        pushd work/cflinuxfs5-release >/dev/null
+          bosh create-release --timestamp-version --force \
+            --tarball "../cflinuxfs5-release.tgz"
+        popd >/dev/null
 
-    # --- Download & Upload prebuilt CAPI release ---
-    - name: Download CAPI release
-      shell: bash
-      run: wget -O capi-release.tgz https://bosh.io/d/github.com/cloudfoundry/capi-release?v=1.213.0
-
-    - name: Upload CAPI release to BOSH
+    - name: Upload cflinuxfs5 release to BOSH
       shell: bash
       run: |
-        cd deployment-source-config
-        source source_file.yml
-        cd ..
-        bosh upload-release capi-release.tgz --non-interactive
+        set -euo pipefail
+        bosh upload-release work/cflinuxfs5-release.tgz
 
-    # --- Create ops files for custom stack ---
-    - name: Create ops files
+    - name: Prepare cflinuxfs5 ops files (embedded)
+      id: opsfiles
       shell: bash
       run: |
-        mkdir -p rootfs-release-artifacts capi-release-artifacts custom-ops
-        cat > rootfs-release-artifacts/use-dev-release-opsfile.yml <<EOF
-        - type: replace
-          path: /releases/name=${{ inputs.stack }}
-          value:
-            name: ${{ inputs.stack }}
-            version: ${unique_version}
-        EOF
-        cat > capi-release-artifacts/use-prebuilt-capi.yml <<EOF
-        - type: replace
-          path: /releases/name=capi
-          value:
-            name: capi
-            version: 1.213.0
-        EOF
-        cat > custom-ops/add-${{ inputs.stack }}.yml <<EOF
+        set -euo pipefail
+        mkdir -p ops/generated
+
+        cat > ops/generated/add-cflinuxfs5.yml <<'EOF'
+        ---
         - type: replace
           path: /releases/-
           value:
-            name: ${{ inputs.stack }}
-            version: ${unique_version}
-        EOF
-        cat > custom-ops/set-${{ inputs.stack }}-default-stack.yml <<EOF
+            name: cflinuxfs5
+            version: latest
+
         - type: replace
           path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/stacks/-
           value:
-            name: ${{ inputs.stack }}
-            description: Cloud Foundry Linux FS 5
-            build_rootfs: ${{ inputs.stack }}
-            run_rootfs: ${{ inputs.stack }}
-            default: true
-        EOF
+            name: cflinuxfs5
+            description: "Cloud Foundry cflinuxfs5 (Ubuntu 24.04)"
 
-    - name: Generate Noble compiled releases ops file
-      shell: bash
-      run: |
-        chmod +x ${{ github.action_path }}/create-ops-file.sh
-        ${{ github.action_path }}/create-ops-file.sh
-
-    - name: Set AWS creds on Director
-      shell: bash
-      run: |
-        cd bbl-state/${{ inputs.stack }}
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        ssh-keyscan -H 35.222.206.29 >> ~/.ssh/known_hosts
-        chmod 644 ~/.ssh/known_hosts
-        bbl ssh --director <<'EOF'
-        mkdir -p ~/.aws
-        cat > ~/.aws/credentials <<EOC
-        [default]
-        aws_access_key_id = ${AWS_ACCESS_KEY_ID}
-        aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
-        EOC
-        cat > ~/.aws/config <<EOC
-        [default]
-        region = us-east-1
-        EOC
-        EOF
-
-    - name: Use noble stemcell
-      shell: bash
-      run: |
-        cat > use-noble-stemcell.yml <<'EOF'
         - type: replace
-          path: /stemcells/0/os
-          value: ubuntu-noble
+          path: /instance_groups/name=diego-cell/jobs/-
+          value:
+            name: cflinuxfs5-rootfs-setup
+            release: cflinuxfs5
+
+        - type: replace
+          path: /instance_groups/name=diego-cell/jobs/name=containerd/properties/containerd/stacks/-
+          value:
+            name: cflinuxfs5
+            description: "Cloud Foundry cflinuxfs5 (Ubuntu 24.04)"
         EOF
 
+        cat > ops/generated/set-cflinuxfs5-default-stack.yml <<'EOF'
+        ---
+        - type: replace
+          path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/default_stack?
+          value: cflinuxfs5
+        EOF
 
-    # --- Deploy CF ---
-    - name: Deploy CF
+        echo "add_op=ops/generated/add-cflinuxfs5.yml" >> "$GITHUB_OUTPUT"
+        echo "default_op=ops/generated/set-cflinuxfs5-default-stack.yml" \
+          >> "$GITHUB_OUTPUT"
+
+    - name: Deploy CF with cflinuxfs5
       id: deploy
       shell: bash
       run: |
-        cd deployment-source-config
-        source source_file.yml
-        bosh -n -d cf deploy ../cf-deployment/cf-deployment.yml \
-        --ops-file ../cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
-        --ops-file ../cf-deployment/operations/use-latest-stemcell.yml \
-        --ops-file ../custom-ops/add-${{ inputs.stack }}.yml \
-        --ops-file ../custom-ops/set-${{ inputs.stack }}-default-stack.yml \
-        --ops-file ../rootfs-release-artifacts/use-dev-release-opsfile.yml \
-        --ops-file ../capi-release-artifacts/use-prebuilt-capi.yml \
-        --ops-file ../use-compiled-releases-noble.yml \
-        --ops-file ../use-noble-stemcell.yml \
-        --var system_domain='${{ inputs.system_domain }}' \
-        --vars-store cf-vars.yml
+        set -euo pipefail
+        DOMAIN="${{ steps.cfg.outputs.system_domain }}"
+        echo "System domain: ${DOMAIN}"
 
-    # --- Smoke test new stack ---
-    - name: Smoke test new stack
-      if: steps.deploy.outputs.success == 'true'
+        bosh -n -d cf deploy cf-deployment/cf-deployment.yml \
+          -o cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
+          -o cf-deployment/operations/use-compiled-releases.yml \
+          -o cf-deployment/operations/use-postgres.yml \
+          -o cf-deployment/operations/use-latest-stemcell.yml \
+          -o "${{ steps.opsfiles.outputs.add_op }}" \
+          -o "${{ steps.opsfiles.outputs.default_op }}" \
+          -v system_domain="${DOMAIN}"
+
+    - name: Mark success
+      id: done
+      if: ${{ success() }}
       shell: bash
       run: |
-        cd deployment-source-config
-        source source_file.yml
-        cf api https://${{ inputs.system_domain }} --skip-ssl-validation
-        cf auth admin $(bosh int cf-vars.yml --path /admin_password)
-        cf create-org test-org
-        cf target -o test-org
-        cf create-space test-space
-        cf target -s test-space
-        git clone https://github.com/cloudfoundry-samples/cf-sample-app-nodejs app
-        cd app
-        cf push test-app -b nodejs_buildpack -s ${{ inputs.stack }}
-        cf apps
+        echo "success=true" >> "$GITHUB_OUTPUT"
