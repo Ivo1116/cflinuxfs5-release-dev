@@ -61,6 +61,14 @@ runs:
         ref: ${{ steps.cfg.outputs.cf_ref }}
         path: cf-deployment
 
+    - name: Clone cflinuxfs5-release
+      uses: actions/checkout@v4
+      with:
+        repository: ivo1116/cflinuxfs5-release
+        ref: main
+        path: work/cflinuxfs5-release
+        token: ${{ env.CFLINUXFS5_TOKEN }}
+
     - name: Setup tools (bosh, bbl, awscli, jq, yq)
       shell: bash
       env:
