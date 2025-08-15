@@ -263,8 +263,10 @@ runs:
       run: |
         set -euo pipefail
         pushd work/cflinuxfs5-release >/dev/null
-          # No private.yml needed — credentials come from env vars
+          # Download all missing blobs from S3
           bosh sync-blobs
+
+          # Create the release tarball
           bosh create-release --timestamp-version --force \
             --tarball "../cflinuxfs5-release.tgz"
         popd >/dev/null
