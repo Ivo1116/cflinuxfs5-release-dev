@@ -263,7 +263,9 @@ runs:
       run: |
         set -euo pipefail
         pushd work/cflinuxfs5-release >/dev/null
-          # Download all missing blobs from S3
+          rm -f config/private.yml
+
+          # Download all missing blobs from S3 using env credentials
           bosh sync-blobs
 
           # Create the release tarball
