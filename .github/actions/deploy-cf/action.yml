@@ -130,21 +130,40 @@ runs:
             printf '%s' "${GCP_SERVICE_ACCOUNT_KEY}" > "${HOME}/.gcp/key.json"
             export GOOGLE_CREDENTIALS="${HOME}/.gcp/key.json"
           fi
-          # Export BOSH_* vars
-          OUT="$(bbl print-env)"
-          if [[ -z "${OUT}" ]]; then
-            echo "bbl print-env returned empty output. Ensure the state dir is correct."
-            exit 1
-          fi
-          eval "${OUT}"
+          eval "$(bbl print-env)"
         popd >/dev/null
 
-        # Validate env
-        if [[ -z "${BOSH_ENVIRONMENT:-}" ]]; then
-          echo "Expected non-empty BOSH_ENVIRONMENT after bbl print-env"
-          exit 1
-        fi
+        # Persist BOSH env vars for later steps
+        echo "BOSH_ENVIRONMENT=$BOSH_ENVIRONMENT" >> $GITHUB_ENV
+        echo "BOSH_CLIENT=$BOSH_CLIENT" >> $GITHUB_ENV
+        echo "BOSH_CLIENT_SECRET=$BOSH_CLIENT_SECRET" >> $GITHUB_ENV
+        echo "BOSH_CA_CERT<<EOF" >> $GITHUB_ENV
+        echo "$BOSH_CA_CERT" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
         bosh env
+
+    - name: Create dev BOSH release tarball
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        set -euo pipefail
+        pushd work/cflinuxfs5-release >/dev/null
+          mkdir -p config
+          cat > config/private.yml <<EOF
+        ---
+        blobstore:
+          provider: s3
+          options:
+            access_key_id: ${AWS_ACCESS_KEY_ID}
+            secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+        EOF
+          bosh sync-blobs
+          bosh create-release --timestamp-version --force \
+            --tarball "../cflinuxfs5-release.tgz"
+        popd >/dev/null
 
     - name: Delete existing CF (ignore errors)
       shell: bash
