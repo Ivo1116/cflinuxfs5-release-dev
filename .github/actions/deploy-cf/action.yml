@@ -44,8 +44,6 @@ runs:
           DOMAIN="${{ inputs.env_name }}.buildpacks-gcp.ci.cf-app.com"
         fi
         echo "system_domain=${DOMAIN}" >> "$GITHUB_OUTPUT"
-
-        # State dir equals env_name (as created by your bbl-up action)
         echo "bbl_dir=${{ inputs.env_name }}" >> "$GITHUB_OUTPUT"
 
     - name: Checkout bbl state repo
@@ -65,32 +63,60 @@ runs:
 
     - name: Setup tools (bosh, bbl, awscli, jq, yq)
       shell: bash
+      env:
+        GH_TOKEN: ${{ env.CFLINUXFS5_TOKEN }}
       run: |
         set -euo pipefail
         sudo apt-get update
         sudo apt-get install -y jq unzip curl python3-pip
-        pip3 install --user awscli
-        echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+        if ! command -v aws >/dev/null 2>&1; then
+          pip3 install --user awscli
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+        fi
 
+        # bosh-cli
         BOSH_VERSION="7.6.2"
-        curl -L \
+        curl -fsSL \
           "https://github.com/cloudfoundry/bosh-cli/releases/download/v${BOSH_VERSION}/bosh-cli-${BOSH_VERSION}-linux-amd64" \
           -o bosh
         sudo install -m 0755 bosh /usr/local/bin/bosh
 
-        BBL_VERSION="$(curl -s \
-          https://api.github.com/repos/cloudfoundry/bosh-bootloader/releases/latest \
-          | jq -r .tag_name | sed 's/^v//')"
-        curl -L \
-          "https://github.com/cloudfoundry/bosh-bootloader/releases/download/v${BBL_VERSION}/bbl-v${BBL_VERSION}_linux_x86-64" \
-          -o bbl
-        sudo install -m 0755 bbl /usr/local/bin/bbl
-
+        # yq (v4)
         YQ_VERSION="4.44.3"
-        curl -L \
+        curl -fsSL \
           "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
           -o yq
         sudo install -m 0755 yq /usr/local/bin/yq
+
+        # bbl (robust install: pick correct linux asset from release JSON)
+        echo "Installing bbl..."
+        HDRS=(-H "Accept: application/vnd.github+json")
+        if [[ -n "${GH_TOKEN:-}" ]]; then
+          HDRS+=(-H "Authorization: Bearer ${GH_TOKEN}")
+        fi
+        curl -fsSL "${HDRS[@]}" \
+          https://api.github.com/repos/cloudfoundry/bosh-bootloader/releases/latest \
+          -o bbl_release.json
+
+        BBL_ASSET_URL="$(
+          jq -r '.assets[] 
+            | select(.name | test("linux(_|-)(x86-64|amd64)$")) 
+            | .browser_download_url' bbl_release.json | head -n1
+        )"
+
+        if [[ -z "${BBL_ASSET_URL}" || "${BBL_ASSET_URL}" == "null" ]]; then
+          echo "Could not find a linux bbl asset in the latest release."
+          echo "Release JSON:"
+          jq -r '.tag_name, (.assets[]?.name // empty)' bbl_release.json || true
+          exit 1
+        fi
+
+        echo "Downloading bbl from: ${BBL_ASSET_URL}"
+        curl -fsSL "${BBL_ASSET_URL}" -o bbl
+        sudo install -m 0755 bbl /usr/local/bin/bbl
+
+        echo "bbl version:"
+        bbl --version
 
     - name: Set BOSH env via bbl
       shell: bash
@@ -101,11 +127,23 @@ runs:
         pushd "bbl-state/${{ steps.cfg.outputs.bbl_dir }}" >/dev/null
           if [[ -n "${GCP_SERVICE_ACCOUNT_KEY:-}" ]]; then
             mkdir -p "${HOME}/.gcp"
-            echo "${GCP_SERVICE_ACCOUNT_KEY}" > "${HOME}/.gcp/key.json"
+            printf '%s' "${GCP_SERVICE_ACCOUNT_KEY}" > "${HOME}/.gcp/key.json"
             export GOOGLE_CREDENTIALS="${HOME}/.gcp/key.json"
           fi
-          eval "$(bbl print-env)"
+          # Export BOSH_* vars
+          OUT="$(bbl print-env)"
+          if [[ -z "${OUT}" ]]; then
+            echo "bbl print-env returned empty output. Ensure the state dir is correct."
+            exit 1
+          fi
+          eval "${OUT}"
         popd >/dev/null
+
+        # Validate env
+        if [[ -z "${BOSH_ENVIRONMENT:-}" ]]; then
+          echo "Expected non-empty BOSH_ENVIRONMENT after bbl print-env"
+          exit 1
+        fi
         bosh env
 
     - name: Delete existing CF (ignore errors)
@@ -129,17 +167,15 @@ runs:
       run: |
         set -euo pipefail
         VERSION="${{ inputs.version }}"
-        BUCKET="${{ steps.cfg.outputs.rootfs_bucket }}"
-        PREFIX="${{ steps.cfg.outputs.rootfs_prefix }}"
-        SRC="s3://${BUCKET}/${PREFIX}/cflinuxfs5-${VERSION}.tar.gz"
+        SRC="s3://cflinuxfs5test/rootfs/cflinuxfs5-${VERSION}.tar.gz"
         echo "Downloading ${SRC}"
         aws s3 cp "${SRC}" "work/cflinuxfs5-${VERSION}.tar.gz"
 
     - name: Clone cflinuxfs5-release
       uses: actions/checkout@v4
       with:
-        repository: ${{ steps.cfg.outputs.release_repo }}
-        ref: ${{ steps.cfg.outputs.release_ref }}
+        repository: ivo1116/cflinuxfs5-release
+        ref: main
         path: work/cflinuxfs5-release
         token: ${{ env.CFLINUXFS5_TOKEN }}
 
