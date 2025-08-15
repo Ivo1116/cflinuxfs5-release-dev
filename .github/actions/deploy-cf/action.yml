@@ -187,6 +187,7 @@ runs:
         VERSION="${{ inputs.version }}"
         REL="work/cflinuxfs5-release"
 
+        # Find all spec files
         mapfile -t SPECS < <(find "${REL}/packages" -type f -name spec)
         if [[ ${#SPECS[@]} -eq 0 ]]; then
           echo "No package spec files found in ${REL}/packages"
@@ -195,16 +196,22 @@ runs:
 
         DECL_PATH=""
         for spec in "${SPECS[@]}"; do
-          if yq -r '.files[]? // empty' "$spec" \
-            | grep -Eq 'cflinuxfs5-.*\.tar\.gz'; then
-            DECL_PATH="$(yq -r '.files[]? // empty' "$spec" \
-              | grep -E 'cflinuxfs5-.*\.tar\.gz' | head -n1)"
-            break
-          fi
+          mapfile -t FILES < <(yq -r '.files[]? // ""' "$spec")
+          for f in "${FILES[@]}"; do
+            if [[ "$f" =~ cflinuxfs5-.*\.tar\.gz ]]; then
+              DECL_PATH="$f"
+              break 2
+            fi
+          done
         done
 
         if [[ -z "${DECL_PATH}" ]]; then
           echo "Could not find declared cflinuxfs5-*.tar.gz file in any spec"
+          echo "Files found in specs:"
+          for spec in "${SPECS[@]}"; do
+            echo "--- $spec ---"
+            yq -r '.files[]? // ""' "$spec" || true
+          done
           exit 1
         fi
 
