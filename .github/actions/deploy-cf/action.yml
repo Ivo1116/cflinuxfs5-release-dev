@@ -70,17 +70,12 @@ runs:
         version: ${{ inputs.version }}
         bucket-name: cflinuxfs5test
 
-    - name: Setup BOSH env
-      shell: bash
-      run: |
-        set -euo pipefail
-        BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
-        bbl print-env --state-dir $BBL_STATE_DIR >> $GITHUB_ENV
-
     - name: Upload Noble stemcell
       shell: bash
       run: |
         set -euo pipefail
+        BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
+        eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
         bosh  upload-stemcell https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent
 
     - name: Upload cflinuxfs5 release
@@ -89,12 +84,16 @@ runs:
         set -euo pipefail
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
+        BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
+        eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
         bosh  upload-release rootfs-artifacts/${STACK}-${VERSION}.tar.gz
 
     - name: Deploy CF with cflinuxfs5
       shell: bash
       run: |
         set -euo pipefail
+        BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
+        eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
         bosh -d cf deploy cf-deployment/cf-deployment.yml \
           -o cf-deployment/operations/experimental/use-noble-stemcell.yml \
           -o cf-deployment/operations/use-postgres.yml \
