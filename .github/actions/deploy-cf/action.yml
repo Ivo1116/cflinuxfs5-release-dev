@@ -4,6 +4,9 @@ inputs:
   env_name:
     description: bbl environment name (state dir under the bbl-state repo)
     required: true
+  stack:
+    description: cflinux stack to be used for deployment
+    required: true
   version:
     description: cflinuxfs5 version (e.g., 1.0.0-rc.1)
     required: true
@@ -70,12 +73,14 @@ runs:
     - name: Upload Noble stemcell
       shell: bash
       run: |
+        set -euo pipefail
         BBL_STATE_DIR=bbl-state
         bosh -e $BBL_STATE_DIR upload-stemcell https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent
 
     - name: Upload cflinuxfs5 release
       shell: bash
       run: |
+        set -euo pipefail
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
         BBL_STATE_DIR=bbl-state
@@ -84,6 +89,7 @@ runs:
     - name: Deploy CF with cflinuxfs5
       shell: bash
       run: |
+        set -euo pipefail
         BBL_STATE_DIR=bbl-state
         bosh -e $BBL_STATE_DIR -d cf deploy cf-deployment/cf-deployment.yml \
           -o cf-deployment/operations/experimental/use-noble-stemcell.yml \
