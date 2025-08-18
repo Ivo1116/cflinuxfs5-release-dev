@@ -44,7 +44,7 @@ runs:
     - name: Checkout test ops file repo
       uses: actions/checkout@v4
       with:
-        repository: https://github.com/Ivo1116/test
+        repository: Ivo1116/test
         ref: main
         path: test
 
