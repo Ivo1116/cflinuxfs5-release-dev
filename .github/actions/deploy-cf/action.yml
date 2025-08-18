@@ -95,11 +95,11 @@ runs:
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
-        bosh cloud-config > cloud-config.yml
+        bbl print-cloud-config > cloud-config.yml
         bosh -n update-cloud-config cloud-config.yml
 
 
-        bosh runtime-config > runtime-config.yml
+        bbl print-runtime-config > runtime-config.yml
         bosh -n update-runtime-config runtime-config.yml
 
     - name: Deploy CF with cflinuxfs5
