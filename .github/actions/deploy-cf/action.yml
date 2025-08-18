@@ -83,11 +83,11 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        STACK="${{ inputs.stack }}"
+        STACK="${{ inputs.stack }}" 
         VERSION="${{ inputs.version }}"
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
-        bosh  upload-release rootfs-artifacts/${STACK}-${VERSION}.tar.gz
+        bosh  upload-release rootfs-artifacts/${STACK}-release-${VERSION}.tgz
 
     - name: Deploy CF with cflinuxfs5
       shell: bash
