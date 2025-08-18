@@ -228,7 +228,7 @@ jobs:
           previous-version: ${{ needs.gather-resources.outputs.previous-version }}
 
       - name: Build cflinuxfs5 BOSH release
-        uses: ./.github/actions/build-bosh-release
+        uses: ./.github/actions/make-bosh-release
         with:
           stack: cflinuxfs5
           version: ${{ needs.gather-resources.outputs.version }}
