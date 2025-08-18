@@ -66,8 +66,8 @@ runs:
     - name: Download release from S3
       uses: ./.github/actions/download-s3
       with:
-        stack: inputs.stack
-        version: inputs.version
+        stack: ${{ inputs.stack }}
+        version: ${{ inputs.version }}
         bucket-name: cflinuxfs5test
 
     - name: Upload Noble stemcell
