@@ -15,6 +15,10 @@ inputs:
     description: 'Version of bosh-cli to install'
     required: false
     default: '7.4.0'
+  go-version:
+    description: 'Go version required by golang-1-linux package (e.g., 1.24.6)'
+    required: false
+    default: '1.24.6'
 
 outputs:
   release-tarball:
@@ -41,10 +45,24 @@ runs:
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
         RELEASE_REPO="${{ inputs.release-repo }}"
+        GO_VERSION="${{ inputs.go-version }}"
 
         # Clone the release repo
         git clone "https://github.com/${RELEASE_REPO}" release-repo
         cd release-repo
+
+        # Ensure Go blob exists
+        GO_BLOB_DIR="blobs/golang-1-linux"
+        GO_BLOB_FILE="go${GO_VERSION}.linux-amd64.tar.gz"
+        mkdir -p "${GO_BLOB_DIR}"
+
+        if [ ! -f "${GO_BLOB_DIR}/${GO_BLOB_FILE}" ]; then
+          echo "Downloading Go ${GO_VERSION} blob from go.dev..."
+          curl -L "https://go.dev/dl/${GO_BLOB_FILE}" -o "${GO_BLOB_DIR}/${GO_BLOB_FILE}"
+          bosh add-blob "${GO_BLOB_DIR}/${GO_BLOB_FILE}" "golang-1-linux/${GO_BLOB_FILE}"
+        else
+          echo "Go blob already present: ${GO_BLOB_DIR}/${GO_BLOB_FILE}"
+        fi
 
         # Copy the rootfs tarball into blobs
         mkdir -p blobs/rootfs
