@@ -25,26 +25,6 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Compute config
-      id: cfg
-      shell: bash
-      run: |
-        set -euo pipefail
-        # Constants (change here if your bucket or repos move)
-        echo "rootfs_bucket=cflinuxfs5test" >> "$GITHUB_OUTPUT"
-        echo "rootfs_prefix=rootfs" >> "$GITHUB_OUTPUT"
-        echo "release_repo=ivo1116/cflinuxfs5-release" >> "$GITHUB_OUTPUT"
-        echo "release_ref=main" >> "$GITHUB_OUTPUT"
-        echo "cf_repo=cloudfoundry/cf-deployment" >> "$GITHUB_OUTPUT"
-        echo "cf_ref=main" >> "$GITHUB_OUTPUT"
-
-        if [[ -n "${{ inputs.system_domain }}" ]]; then
-          DOMAIN="${{ inputs.system_domain }}"
-        else
-          DOMAIN="${{ inputs.env_name }}.buildpacks-gcp.ci.cf-app.com"
-        fi
-        echo "system_domain=${DOMAIN}" >> "$GITHUB_OUTPUT"
-        echo "bbl_dir=${{ inputs.env_name }}" >> "$GITHUB_OUTPUT"
 
     - name: Checkout bbl state repo
       uses: actions/checkout@v4
@@ -57,293 +37,56 @@ runs:
     - name: Checkout cf-deployment
       uses: actions/checkout@v4
       with:
-        repository: ${{ steps.cfg.outputs.cf_repo }}
-        ref: ${{ steps.cfg.outputs.cf_ref }}
+        repository: cloudfoundry/cf-deployment
+        ref: main
         path: cf-deployment
 
-    - name: Clone cflinuxfs5-release
+    - name: Checkout test ops file repo
       uses: actions/checkout@v4
       with:
-        repository: ivo1116/cflinuxfs5-release
+        repository: https://github.com/Ivo1116/test
         ref: main
-        path: work/cflinuxfs5-release
-        token: ${{ env.CFLINUXFS5_TOKEN }}
+        path: test
 
-    - name: Setup tools (bosh, bbl, awscli, jq, yq)
-      shell: bash
-      env:
-        GH_TOKEN: ${{ env.CFLINUXFS5_TOKEN }}
-      run: |
-        set -euo pipefail
-        sudo apt-get update
-        sudo apt-get install -y jq unzip curl python3-pip
-        if ! command -v aws >/dev/null 2>&1; then
-          pip3 install --user awscli
-          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-        fi
-
-        # bosh-cli
-        BOSH_VERSION="7.6.2"
-        curl -fsSL \
-          "https://github.com/cloudfoundry/bosh-cli/releases/download/v${BOSH_VERSION}/bosh-cli-${BOSH_VERSION}-linux-amd64" \
-          -o bosh
-        sudo install -m 0755 bosh /usr/local/bin/bosh
-
-        # yq (v4)
-        YQ_VERSION="4.44.3"
-        curl -fsSL \
-          "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
-          -o yq
-        sudo install -m 0755 yq /usr/local/bin/yq
-
-        # bbl (robust install: pick correct linux asset from release JSON)
-        echo "Installing bbl..."
-        HDRS=(-H "Accept: application/vnd.github+json")
-        if [[ -n "${GH_TOKEN:-}" ]]; then
-          HDRS+=(-H "Authorization: Bearer ${GH_TOKEN}")
-        fi
-        curl -fsSL "${HDRS[@]}" \
-          https://api.github.com/repos/cloudfoundry/bosh-bootloader/releases/latest \
-          -o bbl_release.json
-
-        BBL_ASSET_URL="$(
-          jq -r '.assets[] 
-            | select(.name | test("linux(_|-)(x86-64|amd64)$")) 
-            | .browser_download_url' bbl_release.json | head -n1
-        )"
-
-        if [[ -z "${BBL_ASSET_URL}" || "${BBL_ASSET_URL}" == "null" ]]; then
-          echo "Could not find a linux bbl asset in the latest release."
-          echo "Release JSON:"
-          jq -r '.tag_name, (.assets[]?.name // empty)' bbl_release.json || true
-          exit 1
-        fi
-
-        echo "Downloading bbl from: ${BBL_ASSET_URL}"
-        curl -fsSL "${BBL_ASSET_URL}" -o bbl
-        sudo install -m 0755 bbl /usr/local/bin/bbl
-
-        echo "bbl version:"
-        bbl --version
-
-    - name: Set BOSH env via bbl
-      shell: bash
-      env:
-        GCP_SERVICE_ACCOUNT_KEY: ${{ env.GCP_SERVICE_ACCOUNT_KEY }}
-      run: |
-        set -euo pipefail
-        pushd "bbl-state/${{ steps.cfg.outputs.bbl_dir }}" >/dev/null
-          if [[ -n "${GCP_SERVICE_ACCOUNT_KEY:-}" ]]; then
-            mkdir -p "${HOME}/.gcp"
-            printf '%s' "${GCP_SERVICE_ACCOUNT_KEY}" > "${HOME}/.gcp/key.json"
-            export GOOGLE_CREDENTIALS="${HOME}/.gcp/key.json"
-          fi
-          eval "$(bbl print-env)"
-        popd >/dev/null
-
-        # Persist BOSH env vars for later steps
-        echo "BOSH_ENVIRONMENT=$BOSH_ENVIRONMENT" >> $GITHUB_ENV
-        echo "BOSH_CLIENT=$BOSH_CLIENT" >> $GITHUB_ENV
-        echo "BOSH_CLIENT_SECRET=$BOSH_CLIENT_SECRET" >> $GITHUB_ENV
-        echo "BOSH_CA_CERT<<EOF" >> $GITHUB_ENV
-        echo "$BOSH_CA_CERT" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
-
-        bosh env
-
-    - name: Create dev BOSH release tarball
-      shell: bash
-      env:
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-      run: |
-        set -euo pipefail
-        pushd work/cflinuxfs5-release >/dev/null
-          mkdir -p config
-          cat > config/private.yml <<EOF
-        ---
-        blobstore:
-          provider: s3
-          options:
-            access_key_id: ${AWS_ACCESS_KEY_ID}
-            secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-        EOF
-          bosh sync-blobs
-          bosh create-release --timestamp-version --force \
-            --tarball "../cflinuxfs5-release.tgz"
-        popd >/dev/null
-
-    - name: Delete existing CF (ignore errors)
+    - name: Setup tools (bosh, bbl)
       shell: bash
       run: |
         set -euo pipefail
-        bosh -d cf delete-deployment --force || true
+        wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
+        chmod +x /tmp/bbl
+        sudo mv /tmp/bbl /usr/local/bin/bbl
 
-    - name: Prepare workspace
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p work
-        echo "${{ inputs.version }}" > work/version.txt
+        wget -O /tmp/bosh https://github.com/cloudfoundry/bosh-cli/releases/download/v7.4.0/bosh-cli-7.4.0-linux-amd64
+        chmod +x /tmp/bosh
+        sudo mv /tmp/bosh /usr/local/bin/bosh
 
-    - name: Download rootfs tarball from S3
-      shell: bash
-      env:
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-      run: |
-        set -euo pipefail
-        VERSION="${{ inputs.version }}"
-        SRC="s3://cflinuxfs5test/rootfs/cflinuxfs5-${VERSION}.tar.gz"
-        echo "Downloading ${SRC}"
-        aws s3 cp "${SRC}" "work/cflinuxfs5-${VERSION}.tar.gz"
-
-    - name: Clone cflinuxfs5-release
-      uses: actions/checkout@v4
+    - name: Download release from S3
+      uses: ./.github/actions/download-s3
       with:
-        repository: ivo1116/cflinuxfs5-release
-        ref: main
-        path: work/cflinuxfs5-release
-        token: ${{ env.CFLINUXFS5_TOKEN }}
+        stack: inputs.stack
+        version: inputs.version
+        bucket-name: cflinuxfs5test
 
-    - name: Add rootfs tarball as blob (auto-detect path from packages/*/spec)
-      id: addblob
+    - name: Upload Noble stemcell
       shell: bash
       run: |
-        set -euo pipefail
+        BBL_STATE_DIR=bbl-state
+        bosh -e $BBL_STATE_DIR upload-stemcell https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent
+
+    - name: Upload cflinuxfs5 release
+      shell: bash
+      run: |
+        STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
-        REL="work/cflinuxfs5-release"
-
-        # Find all spec files
-        mapfile -t SPECS < <(find "${REL}/packages" -type f -name spec)
-        if [[ ${#SPECS[@]} -eq 0 ]]; then
-          echo "No package spec files found in ${REL}/packages"
-          exit 1
-        fi
-
-        DECL_PATH=""
-        for spec in "${SPECS[@]}"; do
-          mapfile -t FILES < <(yq -r '.files[]? // ""' "$spec")
-          for f in "${FILES[@]}"; do
-            if [[ "$f" =~ cflinuxfs5-.*\.tar\.gz ]]; then
-              DECL_PATH="$f"
-              break 2
-            fi
-          done
-        done
-
-        if [[ -z "${DECL_PATH}" ]]; then
-          echo "Could not find declared cflinuxfs5-*.tar.gz file in any spec"
-          echo "Files found in specs:"
-          for spec in "${SPECS[@]}"; do
-            echo "--- $spec ---"
-            yq -r '.files[]? // ""' "$spec" || true
-          done
-          exit 1
-        fi
-
-        DIR="$(dirname "${DECL_PATH}")"
-        if [[ "${DIR}" == "." ]]; then
-          BLOB_PATH="cflinuxfs5-${VERSION}.tar.gz"
-        else
-          BLOB_PATH="${DIR}/cflinuxfs5-${VERSION}.tar.gz"
-        fi
-        echo "Using blob path: ${BLOB_PATH}"
-
-        pushd "${REL}" >/dev/null
-          bosh add-blob "../cflinuxfs5-${VERSION}.tar.gz" "${BLOB_PATH}"
-        popd >/dev/null
-        echo "blob_path=${BLOB_PATH}" >> "$GITHUB_OUTPUT"
-
-    - name: Create dev BOSH release tarball
-      shell: bash
-      env:
-        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-      run: |
-        set -euo pipefail
-        pushd work/cflinuxfs5-release >/dev/null
-          rm -f config/private.yml
-
-          # Download all missing blobs from S3 using env credentials
-          bosh sync-blobs
-
-          # Create the release tarball
-          bosh create-release --timestamp-version --force \
-            --tarball "../cflinuxfs5-release.tgz"
-        popd >/dev/null
-
-    - name: Upload cflinuxfs5 release to BOSH
-      shell: bash
-      run: |
-        set -euo pipefail
-        bosh upload-release work/cflinuxfs5-release.tgz
-
-    - name: Prepare cflinuxfs5 ops files (embedded)
-      id: opsfiles
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p ops/generated
-
-        cat > ops/generated/add-cflinuxfs5.yml <<'EOF'
-        ---
-        - type: replace
-          path: /releases/-
-          value:
-            name: cflinuxfs5
-            version: latest
-
-        - type: replace
-          path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/stacks/-
-          value:
-            name: cflinuxfs5
-            description: "Cloud Foundry cflinuxfs5 (Ubuntu 24.04)"
-
-        - type: replace
-          path: /instance_groups/name=diego-cell/jobs/-
-          value:
-            name: cflinuxfs5-rootfs-setup
-            release: cflinuxfs5
-
-        - type: replace
-          path: /instance_groups/name=diego-cell/jobs/name=containerd/properties/containerd/stacks/-
-          value:
-            name: cflinuxfs5
-            description: "Cloud Foundry cflinuxfs5 (Ubuntu 24.04)"
-        EOF
-
-        cat > ops/generated/set-cflinuxfs5-default-stack.yml <<'EOF'
-        ---
-        - type: replace
-          path: /instance_groups/name=api/jobs/name=cloud_controller_ng/properties/cc/default_stack?
-          value: cflinuxfs5
-        EOF
-
-        echo "add_op=ops/generated/add-cflinuxfs5.yml" >> "$GITHUB_OUTPUT"
-        echo "default_op=ops/generated/set-cflinuxfs5-default-stack.yml" \
-          >> "$GITHUB_OUTPUT"
+        BBL_STATE_DIR=bbl-state
+        bosh -e $BBL_STATE_DIR upload-release rootfs-artifacts/${STACK}-${VERSION}.tar.gz
 
     - name: Deploy CF with cflinuxfs5
-      id: deploy
       shell: bash
       run: |
-        set -euo pipefail
-        DOMAIN="${{ steps.cfg.outputs.system_domain }}"
-        echo "System domain: ${DOMAIN}"
-
-        bosh -n -d cf deploy cf-deployment/cf-deployment.yml \
-          -o cf-deployment/operations/experimental/fast-deploy-with-downtime-and-danger.yml \
-          -o cf-deployment/operations/use-compiled-releases.yml \
+        BBL_STATE_DIR=bbl-state
+        bosh -e $BBL_STATE_DIR -d cf deploy cf-deployment/cf-deployment.yml \
+          -o cf-deployment/operations/experimental/use-noble-stemcell.yml \
           -o cf-deployment/operations/use-postgres.yml \
-          -o cf-deployment/operations/use-latest-stemcell.yml \
-          -o "${{ steps.opsfiles.outputs.add_op }}" \
-          -o "${{ steps.opsfiles.outputs.default_op }}" \
-          -v system_domain="${DOMAIN}"
-
-    - name: Mark success
-      id: done
-      if: ${{ success() }}
-      shell: bash
-      run: |
-        echo "success=true" >> "$GITHUB_OUTPUT"
+          -o test/use-cflinuxfs5.yml \
+          -v system_domain=$SYSTEM_DOMAIN
