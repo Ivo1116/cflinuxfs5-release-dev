@@ -55,7 +55,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        wget -O /tmp/bbl https://github.com/Ivo1116/bosh-bootloader/releases/download/test/bbl-linux
+        wget -O /tmp/bbl https://github.com/cloudfoundry/bosh-bootloader/releases/download/v9.0.16/bbl-v9.0.16_linux_x86-64
         chmod +x /tmp/bbl
         sudo mv /tmp/bbl /usr/local/bin/bbl
 
@@ -95,7 +95,7 @@ runs:
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
-        bbl print-cloud-config --state-dir $BBL_STATE_DIR > cloud-config.yml
+        cp $BBL_STATE_DIR/cloud-config.yml cloud-config.yml
         bosh -n update-cloud-config cloud-config.yml
 
     - name: Deploy CF with cflinuxfs5
