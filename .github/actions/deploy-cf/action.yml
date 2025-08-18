@@ -95,7 +95,7 @@ runs:
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
-        bosh -d cf deploy cf-deployment/cf-deployment.yml \
+        bosh -n -d cf deploy cf-deployment/cf-deployment.yml \
           -o cf-deployment/operations/experimental/use-noble-stemcell.yml \
           -o cf-deployment/operations/use-postgres.yml \
           -o test/use-cflinuxfs5.yml \
