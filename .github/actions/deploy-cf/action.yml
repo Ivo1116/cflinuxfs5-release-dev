@@ -95,7 +95,7 @@ runs:
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
-        cp $BBL_STATE_DIR/cloud-config.yml cloud-config.yml
+        cp $BBL_STATE_DIR/cloud-config/cloud-config.yml cloud-config.yml
         bosh -n update-cloud-config cloud-config.yml
 
     - name: Deploy CF with cflinuxfs5
