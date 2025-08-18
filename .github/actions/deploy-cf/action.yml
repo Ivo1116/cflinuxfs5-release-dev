@@ -74,7 +74,6 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cd bbl-state/cflinuxfs5
         BBL_STATE_DIR=bbl-state/cflinuxfs5
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
 
