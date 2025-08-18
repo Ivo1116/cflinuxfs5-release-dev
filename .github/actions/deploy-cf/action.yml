@@ -70,12 +70,18 @@ runs:
         version: ${{ inputs.version }}
         bucket-name: cflinuxfs5test
 
-    - name: Upload Noble stemcell
+    - name: Setup BOSH env
       shell: bash
       run: |
         set -euo pipefail
         BBL_STATE_DIR=bbl-state
-        bosh -e $BBL_STATE_DIR upload-stemcell https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent
+        eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
+
+    - name: Upload Noble stemcell
+      shell: bash
+      run: |
+        set -euo pipefail
+        bosh  upload-stemcell https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent
 
     - name: Upload cflinuxfs5 release
       shell: bash
@@ -83,8 +89,7 @@ runs:
         set -euo pipefail
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
-        BBL_STATE_DIR=bbl-state
-        bosh -e $BBL_STATE_DIR upload-release rootfs-artifacts/${STACK}-${VERSION}.tar.gz
+        bosh  upload-release rootfs-artifacts/${STACK}-${VERSION}.tar.gz
 
     - name: Deploy CF with cflinuxfs5
       shell: bash
