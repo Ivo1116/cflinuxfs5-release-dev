@@ -82,6 +82,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        cd bbl-state
         bosh  upload-stemcell https://bosh.io/d/stemcells/bosh-google-kvm-ubuntu-noble-go_agent
 
     - name: Upload cflinuxfs5 release
@@ -90,15 +91,16 @@ runs:
         set -euo pipefail
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
+        cd bbl-state
         bosh  upload-release rootfs-artifacts/${STACK}-${VERSION}.tar.gz
 
     - name: Deploy CF with cflinuxfs5
       shell: bash
       run: |
         set -euo pipefail
-        BBL_STATE_DIR=bbl-state
-        bosh -e $BBL_STATE_DIR -d cf deploy cf-deployment/cf-deployment.yml \
+        cd bbl-state
+        bosh -d cf deploy cf-deployment/cf-deployment.yml \
           -o cf-deployment/operations/experimental/use-noble-stemcell.yml \
           -o cf-deployment/operations/use-postgres.yml \
           -o test/use-cflinuxfs5.yml \
-          -v system_domain=$SYSTEM_DOMAIN
+          -v system_domain=test.com
