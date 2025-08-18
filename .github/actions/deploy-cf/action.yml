@@ -89,7 +89,14 @@ runs:
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
         bosh  upload-release rootfs-artifacts/${STACK}-release-${VERSION}.tgz
 
-
+    - name: Debug
+      shell: bash
+      run: |
+        set -euo pipefail
+        BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
+        eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
+        eval "$(bbl print-env)"
+        bosh cloud-config
 
     - name: Deploy CF with cflinuxfs5
       shell: bash
