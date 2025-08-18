@@ -1,0 +1,59 @@
+name: 'Build BOSH Release'
+description: 'Wrap a rootfs tarball into a proper BOSH release tarball'
+
+inputs:
+  stack:
+    description: 'Stack name (e.g., cflinuxfs5)'
+    required: true
+  version:
+    description: 'Version number (e.g., 1.0.0-rc.1)'
+    required: true
+  release-repo:
+    description: 'GitHub repo containing the BOSH release definition (e.g., cloudfoundry/cflinuxfs5-release)'
+    required: true
+  bosh-cli-version:
+    description: 'Version of bosh-cli to install'
+    required: false
+    default: '7.4.0'
+
+outputs:
+  release-tarball:
+    description: 'Path to the generated BOSH release tarball'
+    value: ${{ steps.build.outputs.release-tarball }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install bosh CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.bosh-cli-version }}"
+        wget -O /tmp/bosh "https://github.com/cloudfoundry/bosh-cli/releases/download/v${VERSION}/bosh-cli-${VERSION}-linux-amd64"
+        chmod +x /tmp/bosh
+        sudo mv /tmp/bosh /usr/local/bin/bosh
+
+    - name: Build BOSH release
+      id: build
+      shell: bash
+      run: |
+        set -euo pipefail
+        STACK="${{ inputs.stack }}"
+        VERSION="${{ inputs.version }}"
+        RELEASE_REPO="${{ inputs.release-repo }}"
+
+        # Clone the release repo
+        git clone "https://github.com/${RELEASE_REPO}" release-repo
+        cd release-repo
+
+        # Copy the rootfs tarball into blobs
+        mkdir -p blobs/rootfs
+        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/
+
+        # Register it as a blob
+        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
+
+        # Create a proper BOSH release tarball
+        bosh create-release --tarball ../rootfs-artifacts/${STACK}-release-${VERSION}.tgz --force
+
+        echo "release-tarball=../rootfs-artifacts/${STACK}-release-${VERSION}.tgz" >> $GITHUB_OUTPUT

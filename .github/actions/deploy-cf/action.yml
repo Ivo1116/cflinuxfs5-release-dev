@@ -69,6 +69,7 @@ runs:
         stack: ${{ inputs.stack }}
         version: ${{ inputs.version }}
         bucket-name: cflinuxfs5test
+        artifact-type: release
 
     - name: Upload Noble stemcell
       shell: bash

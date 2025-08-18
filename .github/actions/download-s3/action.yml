@@ -3,13 +3,16 @@ description: 'Download artifacts from S3'
 
 inputs:
   stack:
-    description: 'Stack name'
+    description: 'Stack name (e.g., cflinuxfs5)'
     required: true
   version:
     description: 'Version number'
     required: true
   bucket-name:
     description: 'S3 bucket name'
+    required: true
+  artifact-type:
+    description: 'Type of artifact to download (stack, receipt, release)'
     required: true
 
 runs:
@@ -22,14 +25,39 @@ runs:
         aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
-    - name: Download rootfs from S3
+    - name: Download from S3
       shell: bash
       run: |
         set -euo pipefail
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
         BUCKET="${{ inputs.bucket-name }}"
+        TYPE="${{ inputs.artifact-type }}"
 
-        mkdir -p rootfs-artifacts
-        echo "Downloading s3://${BUCKET}/rootfs/${STACK}-${VERSION}.tar.gz"
-        aws s3 cp "s3://${BUCKET}/rootfs/${STACK}-${VERSION}.tar.gz" "rootfs-artifacts/${STACK}-${VERSION}.tar.gz"
+        case "$TYPE" in
+          "stack")
+            mkdir -p rootfs-artifacts
+            FILE_NAME="${STACK}-${VERSION}.tar.gz"
+            echo "Downloading stack tarball: s3://${BUCKET}/rootfs/${FILE_NAME}"
+            aws s3 cp "s3://${BUCKET}/rootfs/${FILE_NAME}" "rootfs-artifacts/${FILE_NAME}"
+            ;;
+
+          "receipt")
+            mkdir -p receipt-artifacts
+            FILE_NAME="receipt.${STACK}.x86_64-${VERSION}"
+            echo "Downloading receipt: s3://${BUCKET}/rootfs/${FILE_NAME}"
+            aws s3 cp "s3://${BUCKET}/rootfs/${FILE_NAME}" "receipt-artifacts/${FILE_NAME}"
+            ;;
+
+          "release")
+            mkdir -p rootfs-artifacts
+            FILE_NAME="${STACK}-release-${VERSION}.tgz"
+            echo "Downloading BOSH release tarball: s3://${BUCKET}/rootfs/${FILE_NAME}"
+            aws s3 cp "s3://${BUCKET}/rootfs/${FILE_NAME}" "rootfs-artifacts/${FILE_NAME}"
+            ;;
+
+          *)
+            echo "ERROR: Unknown artifact type: $TYPE"
+            exit 1
+            ;;
+        esac

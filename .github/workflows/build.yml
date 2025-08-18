@@ -15,7 +15,6 @@ on:
     types: [cve-update, golang-update, rootfs-change]
 
 jobs:
-  # Step 1: Check for new CVEs (equivalent to original new-rootfs-cves job)
   check-new-cves:
     name: Check for New CVEs
     runs-on: ubuntu-latest
@@ -60,7 +59,6 @@ jobs:
           rootfs_path: rootfs
           cves_repo_path: new-cves
 
-  # Step 2: Check for Golang package updates
   bump-golang-package:
     name: Bump Golang Package
     runs-on: ubuntu-latest
@@ -90,7 +88,6 @@ jobs:
           golang_release_ref: main
           github_token: ${{ secrets.CFLINUXFS5_TOKEN }}
 
-  # Step 3: Only proceed with build if CVEs were detected, Golang updated, OR manual trigger
   determine-build-needed:
     name: Determine if Build is Needed
     needs: [check-new-cves, bump-golang-package]
@@ -102,12 +99,6 @@ jobs:
       - name: Decide if build is needed
         id: decide
         run: |
-          # Build if:
-          # 1. CVEs were detected
-          # 2. Golang packages were updated
-          # 3. Manual workflow dispatch
-          # 4. Repository dispatch events
-          
           reasons=()
           
           if [[ "${{ needs.check-new-cves.outputs.cves_detected }}" == "true" ]]; then
@@ -140,7 +131,6 @@ jobs:
     name: Gather Resources
     needs: [check-new-cves, bump-golang-package, determine-build-needed]
     runs-on: ubuntu-latest
-    # Only run if build is needed
     if: needs.determine-build-needed.outputs.should_build == 'true'
     outputs:
       previous-version: ${{ steps.previous-release.outputs.tag }}
@@ -223,7 +213,6 @@ jobs:
           path: cflinuxfs5
           token: ${{ secrets.CFLINUXFS5_TOKEN }}
 
-      # Build rootfs
       - name: Make rootfs
         uses: ./.github/actions/make-rootfs
         with:
@@ -231,7 +220,6 @@ jobs:
           version: ${{ needs.gather-resources.outputs.version }}
           privileged: true
 
-      # Generate receipt diff
       - name: Generate receipt diff
         uses: ./.github/actions/generate-receipt-diff
         with:
@@ -239,7 +227,13 @@ jobs:
           version: ${{ needs.gather-resources.outputs.version }}
           previous-version: ${{ needs.gather-resources.outputs.previous-version }}
 
-      # Upload to S3 (both stack and receipt)
+      - name: Build cflinuxfs5 BOSH release
+        uses: ./.github/actions/build-bosh-release
+        with:
+          stack: cflinuxfs5
+          version: ${{ needs.gather-resources.outputs.version }}
+          release-repo: ivo1116/cflinuxfs5-release
+
       - name: Upload stack to S3
         uses: ./.github/actions/upload-s3
         with:
@@ -253,6 +247,14 @@ jobs:
           upload-type: receipt-s3
           version: ${{ needs.gather-resources.outputs.version }}
           bucket-name: cflinuxfs5test
+
+      - name: Upload BOSH release to S3
+        uses: ./.github/actions/upload-s3
+        with:
+          upload-type: release-s3
+          version: ${{ needs.gather-resources.outputs.version }}
+          bucket-name: cflinuxfs5test
+          file: rootfs-artifacts/cflinuxfs5-release-${{ needs.gather-resources.outputs.version }}.tgz
 
       # Update repositories
       # - name: Update repositories
@@ -271,7 +273,6 @@ jobs:
             public-robots-artifacts/
           retention-days: 30
 
-  # Summary job to show what happened
   build-summary:
     name: Build Summary
     runs-on: ubuntu-latest
