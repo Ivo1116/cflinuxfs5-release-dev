@@ -85,14 +85,13 @@ runs:
         CFLINUXFS5_LB_KEY: ${{ env.CFLINUXFS5_LB_KEY }}
       run: |
         set -euo pipefail
-
         export PATH="/usr/local/bin:$PATH"
 
         mkdir -p bbl-state/${{ inputs.env_name }}
         cd bbl-state/${{ inputs.env_name }}
 
         # Write GCP service account key to file
-        echo "${GCP_SERVICE_ACCOUNT_KEY}" > gcp-key.json
+        printf "%s" "${GCP_SERVICE_ACCOUNT_KEY}" > gcp-key.json
 
         export BBL_GCP_SERVICE_ACCOUNT_KEY="$(pwd)/gcp-key.json"
         export BBL_GCP_PROJECT_ID="${{ inputs.gcp_project_id }}"
@@ -101,8 +100,8 @@ runs:
         export BBL_IAAS=gcp
 
         if [[ -n "${CFLINUXFS5_LB_CERT:-}" && -n "${CFLINUXFS5_LB_KEY:-}" ]]; then
-          echo "${CFLINUXFS5_LB_CERT}" > lb-cert.pem
-          echo "${CFLINUXFS5_LB_KEY}" > lb-key.pem
+          printf "%s" "${CFLINUXFS5_LB_CERT}" > lb-cert.pem
+          printf "%s" "${CFLINUXFS5_LB_KEY}" > lb-key.pem
           export BBL_LB_CERT="$(pwd)/lb-cert.pem"
           export BBL_LB_KEY="$(pwd)/lb-key.pem"
         fi
@@ -112,13 +111,23 @@ runs:
         fi
 
         bbl up --debug \
-        --terraform-binary /usr/local/bin/terraform \
-        ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
-        ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
-        ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
+          --terraform-binary /usr/local/bin/terraform \
+          --lb-type cf \
+          ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
+          ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
+          ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
 
-        echo "success=true" >> $GITHUB_OUTPUT
+        bbl create-lbs --type cf \
+          ${BBL_LB_CERT:+--cert "$BBL_LB_CERT"} \
+          ${BBL_LB_KEY:+--key "$BBL_LB_KEY"} \
+          ${LB_DOMAIN:+--domain "$LB_DOMAIN"}
 
+        bbl print-env > /tmp/bbl-print-env.sh
+        source /tmp/bbl-print-env.sh
+        bbl cloud-config > /tmp/cloud-config.yml
+        bosh -n update-cloud-config /tmp/cloud-config.yml
+
+        echo "success=true" >> "$GITHUB_OUTPUT"
     - name: Commit and push BBL state
       shell: bash
       run: |
