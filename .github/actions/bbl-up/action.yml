@@ -117,11 +117,6 @@ runs:
           ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
           ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
 
-        bbl create-lbs --type cf \
-          ${BBL_LB_CERT:+--cert "$BBL_LB_CERT"} \
-          ${BBL_LB_KEY:+--key "$BBL_LB_KEY"} \
-          ${LB_DOMAIN:+--domain "$LB_DOMAIN"}
-
         bbl print-env > /tmp/bbl-print-env.sh
         source /tmp/bbl-print-env.sh
         bbl cloud-config > /tmp/cloud-config.yml
