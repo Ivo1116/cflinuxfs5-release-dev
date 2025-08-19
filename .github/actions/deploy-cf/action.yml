@@ -94,8 +94,11 @@ runs:
       run: |
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
+        echo "=============================================="
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
-        eval "$(bbl print-env)"
+        echo "=============================================="
+        bbl print-env --state-dir $BBL_STATE_DIR
+        echo "=============================================="
         bosh cloud-config
 
     - name: Deploy CF with cflinuxfs5
