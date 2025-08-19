@@ -119,20 +119,6 @@ runs:
 
         echo "success=true" >> $GITHUB_OUTPUT
 
-    - name: Upload cloud-config and runtime-config
-      shell: bash
-      run: |
-        set -euo pipefail
-        cd bbl-state/${{ inputs.env_name }}
-        eval "$(bbl print-env --state-dir .)"
-
-        # Upload cloud-config for GCP
-        bosh -n update-cloud-config ../../bosh-deployment/gcp/cloud-config.yml
-
-        # Upload runtime-configs
-        bosh -n update-runtime-config ../../bosh-deployment/runtime-configs/dns.yml --name=dns
-        bosh -n update-runtime-config ../../bosh-deployment/runtime-configs/bpm.yml --name=bpm
-
     - name: Commit and push BBL state
       shell: bash
       run: |
