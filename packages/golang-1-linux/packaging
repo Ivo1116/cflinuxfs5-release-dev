@@ -2,25 +2,20 @@
 set -euo pipefail
 
 echo "DEBUG: Current directory: $(pwd)"
-echo "DEBUG: Listing files (depth 3):"
-find . -maxdepth 3 -type f | sed 's/^/  /'
+find . -maxdepth 3 -type f -name '*.tar.gz' -print
 
-# Pick arch (optional; keep amd64 if that's all you need)
-arch="amd64"
-case "$(uname -m)" in
-  aarch64|arm64) arch="arm64" ;;
-esac
+BLOB_PATH="$(find . -type f -name '*.tar.gz' | head -n 1 || true)"
 
-# Search recursively to match your spec path
-BLOB_PATH="$(find . -type f -name "go*.linux-${arch}.tar.gz" | head -n 1 || true)"
-
-if [[ -z "${BLOB_PATH}" ]]; then
-  echo "ERROR: No golang blob found. Check spec 'files:' and blobs.yml."
+if [[ -z "$BLOB_PATH" ]]; then
+  echo "ERROR: No golang blob found in package source directory"
   exit 1
 fi
 
-echo "DEBUG: Using Golang blob: ${BLOB_PATH}"
+echo "DEBUG: Using Golang blob: $BLOB_PATH"
 
-# Install into the BOSH package install dir
-mkdir -p "${BOSH_INSTALL_TARGET}/usr/local"
-tar -C "${BOSH_INSTALL_TARGET}/usr/local" -xzf "${BLOB_PATH}"
+# Extract Go into the BOSH install target
+mkdir -p "${BOSH_INSTALL_TARGET}"
+tar -C "${BOSH_INSTALL_TARGET}" -xzf "$BLOB_PATH"
+
+# Ensure bin is on PATH for dependent packages
+ls -l "${BOSH_INSTALL_TARGET}/go/bin"
