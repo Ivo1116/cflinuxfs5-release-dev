@@ -1,17 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 echo "DEBUG: Current directory: $(pwd)"
+echo "DEBUG: Listing files (depth 3):"
+find . -maxdepth 3 -type f | sed 's/^/  /'
 
-# Find the Golang tarball in the current package source directory
-BLOB_PATH=$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)
+# Pick arch (optional; keep amd64 if that's all you need)
+arch="amd64"
+case "$(uname -m)" in
+  aarch64|arm64) arch="arm64" ;;
+esac
 
-if [[ -z "$BLOB_PATH" ]]; then
-  echo "ERROR: No golang blob found in package source directory"
+# Search recursively to match your spec path
+BLOB_PATH="$(find . -type f -name "go*.linux-${arch}.tar.gz" | head -n 1 || true)"
+
+if [[ -z "${BLOB_PATH}" ]]; then
+  echo "ERROR: No golang blob found. Check spec 'files:' and blobs.yml."
   exit 1
 fi
 
-echo "DEBUG: Using Golang blob: $BLOB_PATH"
+echo "DEBUG: Using Golang blob: ${BLOB_PATH}"
 
-# Extract Golang to /usr/local
-tar -C /usr/local -xzf "$BLOB_PATH"
+# Install into the BOSH package install dir
+mkdir -p "${BOSH_INSTALL_TARGET}/usr/local"
+tar -C "${BOSH_INSTALL_TARGET}/usr/local" -xzf "${BLOB_PATH}"
