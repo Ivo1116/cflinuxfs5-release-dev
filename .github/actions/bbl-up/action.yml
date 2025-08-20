@@ -117,12 +117,8 @@ runs:
           ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
           ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
 
-        bbl print-env > /tmp/bbl-print-env.sh
-        source /tmp/bbl-print-env.sh
-        bbl cloud-config > /tmp/cloud-config.yml
-        bosh -n update-cloud-config /tmp/cloud-config.yml
-
         echo "success=true" >> "$GITHUB_OUTPUT"
+
     - name: Commit and push BBL state
       shell: bash
       run: |
