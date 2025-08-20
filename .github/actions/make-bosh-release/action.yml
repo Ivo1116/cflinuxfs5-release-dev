@@ -1,33 +1,44 @@
-name: 'Build BOSH Release'
-description: 'Wrap a rootfs tarball into a proper BOSH release tarball'
+name: Build BOSH Release (golang-1-linux vendored)
+description: Build a BOSH release tarball with vendored golang-1-linux and a rootfs blob
 
 inputs:
   stack:
-    description: 'Stack name (e.g., cflinuxfs5)'
+    description: Stack name (e.g., cflinuxfs5)
     required: true
   version:
-    description: 'Version number (e.g., 1.0.0-rc.1)'
+    description: Version number for the rootfs (e.g., 1.0.0-rc.1)
     required: true
   release-repo:
-    description: 'GitHub repo containing the BOSH release definition (e.g., cloudfoundry/cflinuxfs5-release)'
+    description: GitHub org/repo for the BOSH release (e.g., cloudfoundry/cflinuxfs5-release)
     required: true
   bosh-cli-version:
-    description: 'Version of bosh-cli to install'
+    description: Version of bosh-cli to install
     required: false
-    default: '7.4.0'
+    default: "7.4.0"
   go-version:
-    description: 'Go version required by golang-1-linux package (e.g., 1.24.6)'
+    description: Go version to vendor as a blob under golang-1-linux (e.g., 1.24.6)
     required: false
-    default: '1.24.6'
+    default: "1.24.6"
+  golang-release-ref:
+    description: Git ref (tag/branch/commit) of bosh-package-golang-release to vendor from
+    required: false
+    default: "main"
 
 outputs:
   release-tarball:
-    description: 'Path to the generated BOSH release tarball'
+    description: Path to the generated BOSH release tarball
     value: ${{ steps.build.outputs.release-tarball }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
+    - name: Install prerequisites
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update -y
+        sudo apt-get install -y curl wget git jq
+
     - name: Install bosh CLI
       shell: bash
       run: |
@@ -46,10 +57,17 @@ runs:
         VERSION="${{ inputs.version }}"
         RELEASE_REPO="${{ inputs.release-repo }}"
         GO_VERSION="${{ inputs.go-version }}"
+        GOLANG_REF="${{ inputs.golang-release-ref }}"
 
         # Clone the release repo
         git clone "https://github.com/${RELEASE_REPO}" release-repo
         cd release-repo
+
+        # Clone bosh-package-golang-release
+        git clone --depth 1 --branch "${GOLANG_REF}" https://github.com/cloudfoundry/bosh-package-golang-release ../bosh-package-golang-release
+
+        # Vendor golang-1-linux into this release
+        bosh vendor-package golang-1-linux ../bosh-package-golang-release
 
         # Ensure Go blob exists
         GO_BLOB_DIR="blobs/golang-1-linux"
@@ -71,7 +89,7 @@ runs:
         # Register it as a blob
         bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
 
-        # Sync blobs to update config/blobs.yml and ensure consistency
+        # Sync blobs to update config/blobs.yml
         bosh sync-blobs
 
         # Create a proper BOSH release tarball
