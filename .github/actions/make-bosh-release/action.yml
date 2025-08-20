@@ -71,7 +71,16 @@ runs:
         # Register it as a blob
         bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
 
+        # Sync blobs to update config/blobs.yml and ensure consistency
+        bosh sync-blobs
+
         # Create a proper BOSH release tarball
         bosh create-release --tarball ../rootfs-artifacts/${STACK}-release-${VERSION}.tgz --force
+
+        # Verify Go blob is included
+        tar -tzf ../rootfs-artifacts/${STACK}-release-${VERSION}.tgz | grep "go${GO_VERSION}.linux-amd64.tar.gz" || {
+          echo "ERROR: Go blob not found in release tarball!"
+          exit 1
+        }
 
         echo "release-tarball=../rootfs-artifacts/${STACK}-release-${VERSION}.tgz" >> $GITHUB_OUTPUT
