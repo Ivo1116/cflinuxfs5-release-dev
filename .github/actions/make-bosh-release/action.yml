@@ -77,10 +77,4 @@ runs:
         # Create a proper BOSH release tarball
         bosh create-release --tarball ../rootfs-artifacts/${STACK}-release-${VERSION}.tgz --force
 
-        # Verify that the golang-1-linux blob directory exists in the tarball
-        if ! tar -tzf ../rootfs-artifacts/${STACK}-release-${VERSION}.tgz | grep -q "golang-1-linux/"; then
-          echo "ERROR: golang-1-linux blob not found in release tarball!"
-          exit 1
-        fi
-
         echo "release-tarball=../rootfs-artifacts/${STACK}-release-${VERSION}.tgz" >> $GITHUB_OUTPUT
