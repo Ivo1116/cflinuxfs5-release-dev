@@ -82,6 +82,8 @@ runs:
           echo "Go blob already present: ${GO_BLOB_DIR}/${GO_BLOB_FILE}"
         fi
 
+        bosh remove-blob rootfs/${STACK}-*.tgz || true
+        bosh remove-blob rootfs/${STACK}-*.tar.gz || true
         # Register the rootfs tarball as the blob expected by the pre-start script
         bosh add-blob ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz cflinuxfs5/cflinuxfs5.tar.gz
 
