@@ -1,4 +1,4 @@
 ---
 name: cflinuxfs5
 files:
-- rootfs/cflinuxfs5-*.tgz
+- rootfs/cflinuxfs5-*.tar.gz
