@@ -82,10 +82,6 @@ runs:
           echo "Go blob already present: ${GO_BLOB_DIR}/${GO_BLOB_FILE}"
         fi
 
-        # Copy the rootfs tarball into blobs
-        mkdir -p blobs/rootfs
-        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/
-
         # Register the rootfs tarball as the blob expected by the pre-start script
         bosh add-blob ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz cflinuxfs5/cflinuxfs5.tar.gz
 
