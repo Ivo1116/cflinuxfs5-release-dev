@@ -86,8 +86,8 @@ runs:
         mkdir -p blobs/rootfs
         cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/
 
-        # Register it as a blob
-        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
+        # Register the rootfs tarball as the blob expected by the pre-start script
+        bosh add-blob ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz cflinuxfs5/cflinuxfs5.tar.gz
 
         # Sync blobs to update config/blobs.yml
         bosh sync-blobs
