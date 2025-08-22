@@ -115,6 +115,9 @@ jobs:
         with:
           stack: cflinuxfs5
           version: ${{ needs.deploy-cf.outputs.version }}
+          bbl_state_repo: ivo1116/buildpacks-envs
+          bbl_state_branch: main
+          env_name: cflinuxfs5
           nodes: 12
           skip_regexp: "Specifying a specific Stack"
           flake_attempts: 3
