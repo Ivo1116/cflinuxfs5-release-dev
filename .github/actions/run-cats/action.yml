@@ -80,7 +80,7 @@ runs:
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
 
-        credhub api --ca-cert <(echo "$BOSH_CA_CERT") "$CREDHUB_SERVER"
+        credhub api --ca-cert <(echo "$CREDHUB_CA_CERT") "$CREDHUB_SERVER"
         credhub login --client-name=credhub-admin --client-secret="$CREDHUB_ADMIN_CLIENT_SECRET"
 
         ADMIN_PASS=$(credhub get -n "/bosh-${{ inputs.env_name }}/cf/admin_password" -q)
