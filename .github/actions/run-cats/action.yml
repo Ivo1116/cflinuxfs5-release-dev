@@ -68,8 +68,9 @@ runs:
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
         wget -qO /tmp/credhub.tgz https://github.com/cloudfoundry/credhub-cli/releases/download/2.9.49/credhub-linux-amd64-2.9.49.tgz
-        tar -xzf /tmp/credhub.tgz -C /tmp
-        sudo mv /tmp/credhub /usr/local/bin/credhub
+        mkdir -p /tmp/credhub-extract
+        tar --no-same-owner --no-same-permissions -xzf /tmp/credhub.tgz -C /tmp/credhub-extract
+        sudo mv /tmp/credhub-extract/credhub /usr/local/bin/credhub
 
     - name: Extract CF admin password from CredHub
       id: creds
