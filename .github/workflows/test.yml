@@ -104,7 +104,7 @@ jobs:
 
   run-cats:
     name: Run Cloud Foundry Acceptance Tests
-    needs: [deploy-cf]
+    needs: [deploy-cf, get-version]
     runs-on: ubuntu-latest
     outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
