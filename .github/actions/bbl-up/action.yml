@@ -52,6 +52,13 @@ runs:
         ref: master
         path: bosh-deployment
 
+    - name: Checkout test repo
+      uses: actions/checkout@v4
+      with:
+        repository: ivo1116/test
+        ref: main
+        path: test-repo
+
     - name: Checkout BBL state repo
       uses: actions/checkout@v4
       with:
@@ -110,9 +117,10 @@ runs:
           export LB_DOMAIN="${{ inputs.lb_domain }}"
         fi
 
-        bbl up --debug \
+        bbl up \
           --terraform-binary /usr/local/bin/terraform \
           --lb-type cf \
+          -o ../test-repo/disable-config-server.yml \
           ${BBL_LB_CERT:+--lb-cert "$BBL_LB_CERT"} \
           ${BBL_LB_KEY:+--lb-key "$BBL_LB_KEY"} \
           ${LB_DOMAIN:+--lb-domain "$LB_DOMAIN"}
@@ -143,9 +151,3 @@ runs:
         else
           echo "No BBL state changes to commit."
         fi
-
-    - name: Output BBL environment info
-      shell: bash
-      run: |
-        cd bbl-state/${{ inputs.env_name }}
-        bbl print-env
