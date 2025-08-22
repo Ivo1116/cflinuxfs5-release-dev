@@ -120,6 +120,7 @@ jobs:
           flake_attempts: 3
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
           BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
 
   check-race-condition:

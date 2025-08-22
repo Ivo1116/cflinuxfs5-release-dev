@@ -55,7 +55,7 @@ runs:
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
         path: bbl-state
 
-    - name: Setup tools (bosh, bbl)
+    - name: Setup tools (bosh, bbl, credhub)
       shell: bash
       run: |
         set -euo pipefail
@@ -67,13 +67,16 @@ runs:
         chmod +x /tmp/bosh
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
+        wget -qO /tmp/credhub.tgz https://github.com/cloudfoundry/credhub-cli/releases/download/2.9.19/credhub-linux-2.9.19.tgz
+        tar -xzf /tmp/credhub.tgz -C /tmp
+        sudo mv /tmp/credhub /usr/local/bin/credhub
+
     - name: Extract CF admin password from CredHub
       id: creds
       shell: bash
       run: |
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
-
         eval "$(bbl print-env --state-dir $BBL_STATE_DIR)"
 
         credhub api --ca-cert <(echo "$BOSH_CA_CERT") "$CREDHUB_SERVER"
