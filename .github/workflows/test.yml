@@ -9,10 +9,6 @@ on:
         description: 'Version to test'
         default: '1.0.0-rc.1'
         required: true
-      skip_cats:
-        description: 'Skip CATs tests'
-        type: boolean
-        default: false
       skip_cleanup:
         description: 'Skip infrastructure cleanup'
         type: boolean
