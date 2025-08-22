@@ -99,5 +99,4 @@ runs:
           -o cf-deployment/operations/experimental/use-noble-stemcell.yml \
           -o cf-deployment/operations/use-postgres.yml \
           -o test/use-cflinuxfs5.yml \
-          --vars-store=cf-vars.yml \
           -v system_domain=test.com
