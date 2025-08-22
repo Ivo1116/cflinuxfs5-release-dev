@@ -67,7 +67,7 @@ runs:
         chmod +x /tmp/bosh
         sudo mv /tmp/bosh /usr/local/bin/bosh
 
-        wget -qO /tmp/credhub.tgz https://github.com/cloudfoundry/credhub-cli/releases/download/2.9.19/credhub-linux-2.9.19.tgz
+        wget -qO /tmp/credhub.tgz https://github.com/cloudfoundry/credhub-cli/releases/download/2.9.49/credhub-linux-amd64-2.9.49.tgz
         tar -xzf /tmp/credhub.tgz -C /tmp
         sudo mv /tmp/credhub /usr/local/bin/credhub
 
