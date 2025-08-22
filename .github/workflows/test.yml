@@ -77,7 +77,7 @@ jobs:
     name: Deploy CF with New Rootfs
     needs: [setup-test-environment, get-version]
     runs-on: ubuntu-latest
-    if: always() && (inputs.skip_setup == true || needs.setup-test-environment.result == 'success')
+    if: inputs.skip_setup == false && needs.setup-test-environment.result == 'success'
     outputs:
       deployment_ready: ${{ steps.deploy.outputs.success }}
       version: ${{ needs.get-version.outputs.version }}
@@ -106,7 +106,6 @@ jobs:
     name: Run Cloud Foundry Acceptance Tests
     needs: [deploy-cf]
     runs-on: ubuntu-latest
-    if: inputs.skip_cats != true
     outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
     steps:
