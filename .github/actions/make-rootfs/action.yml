@@ -30,7 +30,6 @@ runs:
     - name: Start Docker daemon
       shell: bash
       run: |
-        # Ensure Docker daemon is running
         sudo systemctl start docker
         sudo usermod -aG docker $USER
         
@@ -53,33 +52,26 @@ runs:
         set -euo pipefail
         set -x
         
-        # Navigate to rootfs directory (equivalent to pushd rootfs)
         cd ${{ inputs.stack }}
         
-        # Backup old receipt if it exists
         STACK="${{ inputs.stack }}"
         old_receipt_copy="receipt.${STACK}.x86_64.copy"
         
         if [ -f "receipt.${STACK}.x86_64" ]; then
           mv "receipt.${STACK}.x86_64" "$old_receipt_copy"
         else
-          # Create empty backup file for diff comparison
           touch "$old_receipt_copy"
         fi
         
-        # Build the rootfs using make (this is the key step from original)
         make --always-make NAME="$STACK"
         
-        # Move versioned stack tarball to output directory
         VERSION="${{ inputs.version }}"
         versioned_stack_filename="../rootfs-artifacts/${STACK}-${VERSION}.tar.gz"
         mv "${STACK}.x86_64.tar.gz" "$versioned_stack_filename"
         
-        # Move versioned receipt to output directory
         versioned_receipt_filename="../receipt-artifacts/receipt.${STACK}.x86_64-${VERSION}"
         mv "receipt.${STACK}.x86_64" "$versioned_receipt_filename"
         
-        # Show what changed in the receipt (equivalent to git diff in original)
         if command -v git >/dev/null 2>&1; then
           echo "=== Receipt Changes ==="
           TERM=xterm-color git --no-pager diff --no-index "$old_receipt_copy" "$versioned_receipt_filename" || true
@@ -88,10 +80,8 @@ runs:
           diff "$old_receipt_copy" "$versioned_receipt_filename" || true
         fi
         
-        # Clean up
         rm -f "$old_receipt_copy"
         
-        # Set outputs
         echo "artifacts-path=." >> $GITHUB_OUTPUT
         echo "success=true" >> $GITHUB_OUTPUT
         
@@ -102,7 +92,6 @@ runs:
         ls -la rootfs-artifacts/
         ls -la receipt-artifacts/
         
-        # Verify the main artifacts exist
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
         
