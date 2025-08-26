@@ -92,7 +92,7 @@ runs:
         bosh remove-blob rootfs/${STACK}-*.tar.gz || true
 
         cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/${STACK}-${VERSION}.tar.gz
-        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz cflinuxfs5/${STACK}-${VERSION}.tar.gz
+        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
 
         bosh sync-blobs
 
