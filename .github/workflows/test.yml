@@ -76,7 +76,7 @@ jobs:
     name: Deploy CF with New Rootfs
     needs: [setup-test-environment, get-version]
     runs-on: ubuntu-latest
-    if: inputs.skip_deploy != true 
+    if: always && (inputs.skip_deploy != true)
     outputs:
       deployment_ready: ${{ steps.deploy.outputs.success }}
       version: ${{ needs.get-version.outputs.version }}
