@@ -17,7 +17,10 @@ on:
         description: 'Skip setup test environment'
         type: boolean
         default: true
-
+      skip_deploy:
+        description: 'Skip Deploy CF'
+        type: boolean
+        default: true
 jobs:
   get-version:
     name: Get Version
@@ -73,7 +76,7 @@ jobs:
     name: Deploy CF with New Rootfs
     needs: [setup-test-environment, get-version]
     runs-on: ubuntu-latest
-    if: inputs.skip_setup == false && needs.setup-test-environment.result == 'success'
+    if: inputs.skip_deploy != true && needs.setup-test-environment.result == 'success'
     outputs:
       deployment_ready: ${{ steps.deploy.outputs.success }}
       version: ${{ needs.get-version.outputs.version }}
