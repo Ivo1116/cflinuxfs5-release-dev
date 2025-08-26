@@ -89,9 +89,8 @@ runs:
 
         mkdir -p blobs/rootfs
 
-        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/
-
-        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
+        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/${STACK}-${VERSION}.tar.gz
+        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz cflinuxfs5/${STACK}-${VERSION}.tar.gz
 
         bosh sync-blobs
 
