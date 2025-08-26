@@ -1,4 +1,4 @@
-name: Build BOSH Release (golang-1-linux vendored)
+name: Build BOSH Release
 description: Build a BOSH release tarball with vendored golang-1-linux and a rootfs blob
 
 inputs:
@@ -39,6 +39,20 @@ runs:
         sudo apt-get update -y
         sudo apt-get install -y curl wget git jq
 
+    - name: Checkout Release repo
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.release-repo }}
+        ref: main
+        path: release-repo
+
+    - name: Checkout bosh-package-golang-release
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/bosh-package-golang-release
+        ref: ${{ inputs.golang-release-ref }}
+        path: bosh-package-golang-release
+
     - name: Install bosh CLI
       shell: bash
       run: |
@@ -55,21 +69,12 @@ runs:
         set -euo pipefail
         STACK="${{ inputs.stack }}"
         VERSION="${{ inputs.version }}"
-        RELEASE_REPO="${{ inputs.release-repo }}"
         GO_VERSION="${{ inputs.go-version }}"
-        GOLANG_REF="${{ inputs.golang-release-ref }}"
 
-        # Clone the release repo
-        git clone "https://github.com/${RELEASE_REPO}" release-repo
         cd release-repo
 
-        # Clone bosh-package-golang-release
-        git clone --depth 1 --branch "${GOLANG_REF}" https://github.com/cloudfoundry/bosh-package-golang-release ../bosh-package-golang-release
-
-        # Vendor golang-1-linux into this release
         bosh vendor-package golang-1-linux ../bosh-package-golang-release
 
-        # Ensure Go blob exists
         GO_BLOB_DIR="blobs/golang-1-linux"
         GO_BLOB_FILE="go${GO_VERSION}.linux-amd64.tar.gz"
         mkdir -p "${GO_BLOB_DIR}"
@@ -82,17 +87,14 @@ runs:
           echo "Go blob already present: ${GO_BLOB_DIR}/${GO_BLOB_FILE}"
         fi
 
-        # Copy the rootfs tarball into blobs
         mkdir -p blobs/rootfs
-        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/cflinuxfs5.tar.gz
 
-        # Register it as a blob
-        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/cflinuxfs5.tar.gz
+        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/
 
-        # Sync blobs to update config/blobs.yml
+        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
+
         bosh sync-blobs
 
-        # Create a proper BOSH release tarball
         bosh create-release --tarball ../rootfs-artifacts/${STACK}-release-${VERSION}.tgz --force
 
         echo "release-tarball=../rootfs-artifacts/${STACK}-release-${VERSION}.tgz" >> $GITHUB_OUTPUT
