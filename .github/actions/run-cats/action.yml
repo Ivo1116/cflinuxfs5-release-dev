@@ -84,7 +84,7 @@ runs:
 
         eval "$(bbl print-env --state-dir "$BBL_STATE_DIR")"
 
-        DIRECTOR_NAME=$(jq -r .directorName "$BBL_STATE_DIR/bosh/state.json")
+        DIRECTOR_NAME=$(jq -r .bosh.directorName "$BBL_STATE_DIR/bbl-state.json")
 
         ADMIN_PASS=$(credhub get -n "/${DIRECTOR_NAME}/cf/cf_admin_password" -q)
 
