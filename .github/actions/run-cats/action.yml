@@ -75,7 +75,7 @@ runs:
       run: |
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
-        ADMIN_PASS=$(bosh int "${BBL_STATE_DIR}/vars/director-vars-store.yml" --path /cf_admin_password)
+        ADMIN_PASS=$(bosh int "${BBL_STATE_DIR}/vars/director-vars-store.yml" --path /admin_password)
         echo "admin_password=$ADMIN_PASS" >> $GITHUB_OUTPUT
 
     - name: Login to CF
