@@ -84,8 +84,10 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cf api api.${{ inputs.system_domain }} --skip-ssl-validation
-        cf auth admin "${{ steps.creds.outputs.admin_password }}"
+        cf login -a "https://api.${{ inputs.system_domain }}" \
+          --skip-ssl-validation \
+          -u admin \
+          -p "${{ steps.creds.outputs.admin_password }}"
 
     - name: Upload minimal Go buildpack
       shell: bash
