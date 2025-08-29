@@ -54,7 +54,7 @@ runs:
         ssh-key: ${{ env.BBL_STATE_DEPLOY_KEY }}
         path: bbl-state
 
-    - name: Setup tools (bbl, bosh, cf)
+    - name: Setup tools (bbl, bosh, cf, credhub)
       shell: bash
       run: |
         set -euo pipefail
@@ -69,15 +69,26 @@ runs:
         echo "deb https://packages.cloudfoundry.org/debian stable main" | sudo tee /etc/apt/sources.list.d/cloudfoundry-cli.list
         sudo apt-get update
         sudo apt-get install cf8-cli -y
-        cf version
 
-    - name: Extract CF admin password from bbl state
+        wget -O /tmp/credhub.tgz https://github.com/cloudfoundry/credhub-cli/releases/download/2.9.19/credhub-linux-2.9.19.tgz
+        mkdir -p /tmp/credhub-cli
+        tar -xzf /tmp/credhub.tgz -C /tmp/credhub-cli
+        sudo mv /tmp/credhub-cli/credhub /usr/local/bin/credhub
+
+    - name: Extract CF admin password from CredHub
       id: creds
       shell: bash
       run: |
         set -euo pipefail
         BBL_STATE_DIR="bbl-state/${{ inputs.env_name }}"
-        ADMIN_PASS=$(bosh int "${BBL_STATE_DIR}/vars/director-vars-store.yml" --path /admin_password)
+
+        eval "$(bbl print-env --state-dir "$BBL_STATE_DIR")"
+
+        DIRECTOR_NAME=$(jq -r .directorName "$BBL_STATE_DIR/bosh/state.json")
+
+        ADMIN_PASS=$(credhub get -n "/${DIRECTOR_NAME}/cf/cf_admin_password" -q)
+
+        echo "::add-mask::$ADMIN_PASS"
         echo "admin_password=$ADMIN_PASS" >> $GITHUB_OUTPUT
 
     - name: Login to CF
