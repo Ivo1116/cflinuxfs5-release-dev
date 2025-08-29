@@ -101,3 +101,5 @@ runs:
           -o cf-deployment/operations/use-postgres.yml \
           -o test/use-cflinuxfs5.yml \
           -v system_domain=${DOMAIN}
+
+        echo "success=true" >> "$GITHUB_OUTPUT"

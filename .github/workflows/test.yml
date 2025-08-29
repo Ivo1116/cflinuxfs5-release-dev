@@ -76,7 +76,7 @@ jobs:
     name: Deploy CF with New Rootfs
     needs: [setup-test-environment, get-version]
     runs-on: ubuntu-latest
-    if: always() && (inputs.skip_deploy != true)
+    if: always() && (inputs.skip_deploy != true || needs.setup-test-environment.result == 'success')
     outputs:
       deployment_ready: ${{ steps.deploy.outputs.success }}
       version: ${{ needs.get-version.outputs.version }}
@@ -105,7 +105,7 @@ jobs:
     name: Run Cloud Foundry Acceptance Tests
     needs: [deploy-cf, get-version]
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.deploy-cf.result == 'success'
     outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
     steps:
@@ -116,13 +116,12 @@ jobs:
         id: cats
         uses: ./.github/actions/run-cats
         with:
-          stack: cflinuxfs5
-          version: ${{ needs.deploy-cf.outputs.version }}
           bbl_state_repo: ivo1116/buildpacks-envs
           bbl_state_branch: main
+          go_buildpack_path: https://v96161d7o2.ufs.sh/f/mpjH2zGjR1kP2Krc1zMlz8FK1kCfneWqoL2SRvN46pVutrZi
+          system_domain: sisle.org
           env_name: cflinuxfs5
-          nodes: 12
-          skip_regexp: "Specifying a specific Stack"
+          nodes: 4
           flake_attempts: 3
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
