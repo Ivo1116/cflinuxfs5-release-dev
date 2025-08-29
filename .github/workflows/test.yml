@@ -105,8 +105,11 @@ jobs:
     name: Run Cloud Foundry Acceptance Tests
     needs: [deploy-cf, get-version]
     runs-on: ubuntu-latest
-    if: always() && needs.deploy-cf.result == 'success'
-    outputs:
+    if: |
+      always() && (
+        (inputs.skip_deploy == true) || 
+        (needs.deploy-cf.result == 'success')
+      )    outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
     steps:
       - name: Checkout self
