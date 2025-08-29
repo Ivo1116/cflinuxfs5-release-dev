@@ -109,7 +109,8 @@ jobs:
       always() && (
         (inputs.skip_deploy == true) || 
         (needs.deploy-cf.result == 'success')
-      )    outputs:
+      )
+    outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
     steps:
       - name: Checkout self
