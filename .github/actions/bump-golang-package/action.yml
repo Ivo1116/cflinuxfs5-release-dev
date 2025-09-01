@@ -44,7 +44,7 @@ runs:
       with:
         repository: ${{ inputs.cflinuxfs_release_repo }}
         ref: ${{ inputs.cflinuxfs_release_ref }}
-        token: ${{ env.github_token }}
+        token: ${{ env.CFLINUXFS5_TOKEN }
         path: release-repo
 
     - name: Checkout bosh-package-golang-release
@@ -52,7 +52,7 @@ runs:
       with:
         repository: ${{ inputs.golang_release_repo }}
         ref: ${{ inputs.golang_release_ref }}
-        token: ${{ env.github_token }}
+        token: ${{ env.CFLINUXFS5_TOKEN }}
         path: golang-release
 
     - name: Set up Git
