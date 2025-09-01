@@ -35,9 +35,6 @@ inputs:
     description: "Git ref for bosh-package-golang-release"
     required: false
     default: "main"
-  github_token:
-    description: "GitHub token with push access"
-    required: true
 
 runs:
   using: "composite"
@@ -47,7 +44,7 @@ runs:
       with:
         repository: ${{ inputs.cflinuxfs_release_repo }}
         ref: ${{ inputs.cflinuxfs_release_ref }}
-        token: ${{ inputs.github_token }}
+        token: ${{ env.github_token }}
         path: release-repo
 
     - name: Checkout bosh-package-golang-release
@@ -55,7 +52,7 @@ runs:
       with:
         repository: ${{ inputs.golang_release_repo }}
         ref: ${{ inputs.golang_release_ref }}
-        token: ${{ inputs.github_token }}
+        token: ${{ env.github_token }}
         path: golang-release
 
     - name: Set up Git
@@ -107,7 +104,6 @@ runs:
 
         echo "$PRIVATE_YML" >config/private.yml
 
-        # Ensure golang-release/config/final.yml has a name
         mkdir -p "$GOLANG_RELEASE_ABS/config"
         if ! grep -q '^name:' "$GOLANG_RELEASE_ABS/config/final.yml" 2>/dev/null; then
           echo "name: bosh-package-golang-release" > "$GOLANG_RELEASE_ABS/config/final.yml"
@@ -115,7 +111,6 @@ runs:
         echo "=== $GOLANG_RELEASE_ABS/config/final.yml ==="
         cat -A "$GOLANG_RELEASE_ABS/config/final.yml"
 
-        # Ensure at least one dev release exists in golang-release
         pushd "$GOLANG_RELEASE_ABS"
         bosh create-release --force --tarball=tmp.tgz
         rm tmp.tgz

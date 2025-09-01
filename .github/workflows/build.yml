@@ -8,9 +8,7 @@ on:
         required: false
         default: 'Manual trigger'
   schedule:
-    # Daily at 14:32 UTC (equivalent to original 9:32 AM EST)
     - cron: '32 14 * * *'
-  # Add repository dispatch for external triggers
   repository_dispatch:
     types: [cve-update, golang-update, rootfs-change]
 
@@ -25,29 +23,6 @@ jobs:
       - name: Checkout self
         uses: actions/checkout@v4
 
-      - name: Checkout buildpacks-ci
-        uses: actions/checkout@v4
-        with:
-          repository: ivo1116/buildpacks-ci
-          ref: master
-          path: buildpacks-ci
-
-      - name: Checkout cflinuxfs5
-        uses: actions/checkout@v4
-        with:
-          repository: plamen-bardarov/cflinuxfs5
-          ref: main
-          path: rootfs
-          token: ${{ secrets.CFLINUXFS5_TOKEN }}
-
-      - name: Checkout CVEs repository
-        uses: actions/checkout@v4
-        with:
-          repository: cloudfoundry/public-buildpacks-ci-robots
-          ref: main
-          path: new-cves
-          token: ${{ secrets.CFLINUXFS5_TOKEN }}
-
       - name: Check for new CVEs
         id: cve-check
         uses: ./.github/actions/check-rootfs-cves
@@ -58,6 +33,8 @@ jobs:
           buildpacks_ci_path: buildpacks-ci
           rootfs_path: rootfs
           cves_repo_path: new-cves
+    env:
+      CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
 
   bump-golang-package:
     name: Bump Golang Package
@@ -86,7 +63,8 @@ jobs:
           cflinuxfs_release_ref: main
           golang_release_repo: cloudfoundry/bosh-package-golang-release
           golang_release_ref: main
-          github_token: ${{ secrets.CFLINUXFS5_TOKEN }}
+    env:
+      CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
 
   determine-build-needed:
     name: Determine if Build is Needed
@@ -119,7 +97,6 @@ jobs:
           
           if [[ ${#reasons[@]} -gt 0 ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-            # Join reasons array with ", "
             IFS=", "
             echo "reason=${reasons[*]}" >> $GITHUB_OUTPUT
           else

@@ -17,18 +17,6 @@ inputs:
     description: 'Buildpacks CI repository (owner/repo)'
     required: false
     default: 'ivo1116/buildpacks-ci'
-  buildpacks_ci_ref:
-    description: 'Buildpacks CI repository ref'
-    required: false
-    default: 'master'
-  buildpacks_ci_path:
-    description: 'Path to buildpacks-ci repository'
-    required: false
-    default: 'buildpacks-ci'
-  rootfs_path:
-    description: 'Path to rootfs repository'
-    required: false
-    default: 'rootfs'
   cves_repo_path:
     description: 'Path to CVEs repository'
     required: false
@@ -41,9 +29,7 @@ inputs:
     description: 'Git user email for commits'
     required: false
     default: 'cflinuxfs-bot@test.com'
-  github_token:
-    description: 'GitHub token for accessing private repos'
-    required: false
+
 
 outputs:
   changes_detected:
@@ -56,20 +42,36 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Checkout buildpacks-ci (forked)
+    - name: Checkout cflinuxfs5
+      uses: actions/checkout@v4
+      with:
+        repository: plamen-bardarov/cflinuxfs5
+        ref: main
+        path: rootfs
+        token: ${{ env.CFLINUXFS5_TOKEN }}
+
+    - name: Checkout CVEs repository
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/public-buildpacks-ci-robots
+        ref: main
+        path: new-cves
+        token: ${{ env.CFLINUXFS5_TOKEN }}
+
+    - name: Checkout buildpacks-ci
       uses: actions/checkout@v4
       with:
         repository: ${{ inputs.buildpacks_ci_repo }}
-        ref: ${{ inputs.buildpacks_ci_ref }}
-        path: ${{ inputs.buildpacks_ci_path }}
-        token: ${{ inputs.github_token || github.token }}
+        ref: master
+        path: buildpacks-ci
+        token: ${{ env.CFLINUXFS5_TOKEN }}
 
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: '3.1'
         bundler-cache: true
-        working-directory: ${{ inputs.buildpacks_ci_path }}
+        working-directory: buildpacks-ci
 
     - name: Create output directory
       shell: bash
@@ -87,7 +89,7 @@ runs:
     - name: Test gem loading
       shell: bash
       run: |
-        cd ${{ inputs.buildpacks_ci_path }}
+        cd buildpacks-ci
         echo "=== Testing nokogiri ==="
         bundle exec ruby -e "require 'nokogiri'; puts 'nokogiri loaded successfully'" || echo "Failed to load nokogiri"
         echo "=== Testing octokit ==="
@@ -96,14 +98,13 @@ runs:
     - name: Check for new CVEs
       shell: bash
       run: |
-        cd ${{ inputs.buildpacks_ci_path }}
+        cd buildpacks-ci
         export STACK='${{ inputs.stack }}'
         export BUILDPACKS_CI_DIR="$(pwd)"
-        export STACKS_DIR="$(realpath ../${{ inputs.rootfs_path }})"
+        export STACKS_DIR="$(realpath ../rootfs }})"
         export CVES_DIR="$(realpath ../output-new-cves/new-cve-notifications)"
 
        
-        # Make sure the CVEs directory exists
         mkdir -p "$CVES_DIR"
         
         echo "Running CVE check with:"
@@ -112,14 +113,12 @@ runs:
         echo "  STACKS_DIR: $STACKS_DIR"
         echo "  CVES_DIR: $CVES_DIR"
         
-        # Check if the rootfs-cve-notifier exists
         if [[ ! -f "./lib/rootfs-cve-notifier.rb" ]]; then
           echo "Error: rootfs-cve-notifier.rb not found in ./lib/"
           find . -name "*cve*" -o -name "*rootfs*" | head -10
           exit 1
         fi
         
-        # Create a wrapper script to ensure proper bundler environment
         cat > run_cve_check.rb << 'EOF'
         #!/usr/bin/env ruby
         
@@ -148,11 +147,9 @@ runs:
         puts "CVE check completed successfully."
         EOF
         
-        # Set additional environment variables
         export UBUNTU_VERSION="${{ inputs.ubuntu_version }}"
         export UBUNTU_CODENAME="${{ inputs.ubuntu_codename }}"
         
-        # Run the CVE check
         bundle exec ruby run_cve_check.rb
 
     - name: Check for changes
