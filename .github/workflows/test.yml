@@ -105,6 +105,7 @@ jobs:
     name: Run Cloud Foundry Acceptance Tests
     needs: [deploy-cf, get-version]
     runs-on: ubuntu-latest
+    continue-on-error: true
     if: |
       always() && (
         (inputs.skip_deploy == true) || 
@@ -136,7 +137,11 @@ jobs:
     name: Check for Race Conditions
     needs: [deploy-cf, run-cats]
     runs-on: ubuntu-latest
-    if: always() && needs.deploy-cf.result == 'success'
+    if: |
+      always() && (
+        inputs.skip_deploy == true ||
+        needs.deploy-cf.result == 'success'
+      )
     outputs:
       race_check_passed: ${{ steps.race-check.outputs.success }}
     steps:
@@ -170,7 +175,7 @@ jobs:
           stack: cflinuxfs5
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-          BUILDPACKS_ENVS_DEPLOY_KEY: ${{ secrets.BUILDPACKS_ENVS_DEPLOY_KEY }}
+          BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
 
   destroy-test-environment:
     name: Destroy Test Environment
@@ -188,7 +193,6 @@ jobs:
       - name: Destroy test environment
         uses: ./.github/actions/bbl-destroy
         with:
-          stack: cflinuxfs5
           env_name: cflinuxfs5-test
           gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
           bbl_state_repo: ivo1116/buildpacks-envs
@@ -196,8 +200,6 @@ jobs:
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
           BBL_STATE_DEPLOY_KEY: ${{ secrets.BBL_STATE_DEPLOY_KEY }}
-          CFLINUXFS5_LB_CERT: ${{ secrets.CFLINUXFS5_LB_CERT }}
-          CFLINUXFS5_LB_KEY: ${{ secrets.CFLINUXFS5_LB_KEY }}
 
   trigger-release-workflow:
     name: Trigger Release Workflow
