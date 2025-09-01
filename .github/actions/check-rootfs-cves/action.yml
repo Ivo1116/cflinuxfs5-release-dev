@@ -98,10 +98,12 @@ runs:
     - name: Check for new CVEs
       shell: bash
       run: |
+        set -euo pipefail
+
         cd buildpacks-ci
         export STACK='${{ inputs.stack }}'
         export BUILDPACKS_CI_DIR="$(pwd)"
-        export STACKS_DIR="$(realpath ../rootfs }})"
+        export STACKS_DIR="$(realpath ../rootfs )"
         export CVES_DIR="$(realpath ../output-new-cves/new-cve-notifications)"
 
        
