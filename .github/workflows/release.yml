@@ -8,6 +8,7 @@ on:
       version:
         description: RC version to release (e.g. 1.2.3-rc.4)
         required: true
+        default: 1.0.0-rc.1
       skip_github_release:
         description: Skip GitHub release
         type: boolean
@@ -52,6 +53,9 @@ jobs:
       previous_tag: ${{ steps.previous.outputs.previous_tag }}
       proceed: ${{ steps.guard.outputs.proceed }}
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
       - name: Compute RC version
         id: out
         run: |
@@ -104,6 +108,9 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
       - name: Set vars
         id: vars
         run: |
@@ -173,15 +180,6 @@ jobs:
           version: ${{ needs.resolve-inputs.outputs.final_version }}
           bucket-name: ${{ env.BUCKET_NAME }}
 
-      # Concourse release job doesn't re-upload the receipt; it only uploads the final tarball.
-      # If you want the final receipt in S3 too, uncomment the block below.
-      # - name: Upload final receipt to S3
-      #   uses: ./.github/actions/upload-s3
-      #   with:
-      #     upload-type: receipt-s3
-      #     version: ${{ needs.resolve-inputs.outputs.final_version }}
-      #     bucket-name: ${{ env.BUCKET_NAME }}
-
   reset-version-to-rc:
     name: Reset Minor to Next RC
     runs-on: ubuntu-latest
@@ -192,6 +190,9 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
       - name: Bump to next minor rc
         id: bump
         uses: ./.github/actions/bump-next-minor-rc
@@ -215,6 +216,9 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
       - name: Download final stack from S3
         uses: ./.github/actions/download-s3
         with:
@@ -238,7 +242,7 @@ jobs:
           name: ${{ needs.release-rootfs-repo.outputs.final_version }}
           body_file: release-body/body
           asset_glob: rootfs-artifacts/${{ env.STACK }}-*.tar.gz
-          owner: ivo1116 
+          owner: ivo1116
           repo: cflinuxfs5
 
   upload-to-docker:
@@ -250,6 +254,9 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
       - name: Download final stack from S3
         uses: ./.github/actions/download-s3
         with:
@@ -286,6 +293,9 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.CFLINUXFS5_BLOBS_AWS_SECRET_ACCESS_KEY }}
       CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
     steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
       - name: Checkout release repo
         uses: actions/checkout@v4
         with:
