@@ -29,6 +29,7 @@ env:
   DOCKER_IMAGE: cloudfoundry/cflinuxfs5
   BUCKET_NAME: cflinuxfs5test
   DEFAULT_BRANCH: main
+  CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN  }}
 
 permissions:
   contents: write
