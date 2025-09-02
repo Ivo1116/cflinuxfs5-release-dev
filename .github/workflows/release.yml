@@ -219,6 +219,12 @@ jobs:
       - name: Checkout self
         uses: actions/checkout@v4
 
+      - name: debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo ${{ needs.release-rootfs-repo.outputs.final_version }}
+
       - name: Download final stack from S3
         uses: ./.github/actions/download-s3
         with:
