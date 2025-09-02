@@ -1,0 +1,39 @@
+name: Create GitHub Release
+description: Create a GitHub release and upload assets
+inputs:
+  token:
+    description: GitHub token with repo write permissions
+    required: true
+  owner:
+    description: Repository owner
+    required: true
+  repo:
+    description: Repository name
+    required: true
+  tag:
+    description: Release tag
+    required: true
+  name:
+    description: Release name
+    required: true
+  body_file:
+    description: Path to markdown body file
+    required: true
+  asset_glob:
+    description: Glob of assets to upload
+    required: true
+  target_commitish:
+    description: Target commit SHA/branch (optional)
+    required: false
+runs:
+  using: composite
+  steps:
+    - uses: softprops/action-gh-release@v2
+      with:
+        name: ${{ inputs.name }}
+        tag_name: ${{ inputs.tag }}
+        body_path: ${{ inputs.body_file }}
+        files: ${{ inputs.asset_glob }}
+        target_commitish: ${{ inputs.target_commitish }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}

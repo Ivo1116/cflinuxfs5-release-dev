@@ -30,8 +30,6 @@ jobs:
           stack: cflinuxfs5
           ubuntu_version: 'Ubuntu 24.04'
           ubuntu_codename: 'ubuntu24.04'
-          buildpacks_ci_path: buildpacks-ci
-          rootfs_path: rootfs
           cves_repo_path: new-cves
     env:
       CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}

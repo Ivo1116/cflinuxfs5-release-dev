@@ -1,0 +1,29 @@
+name: Generate Release Notes
+description: Generate release notes file release-body/body
+inputs:
+  stack:
+    description: Stack name
+    required: true
+  current_version:
+    description: Current final version being released
+    required: true
+  previous_version:
+    description: Previous release tag to reference (optional)
+    required: false
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p release-body
+        {
+          echo "# ${{ inputs.stack }} ${{ inputs.current_version }}"
+          if [[ -n "${{ inputs.previous_version }}" ]]; then
+            echo
+            echo "Diff from: ${{ inputs.previous_version }}"
+          fi
+          echo
+          echo "Changes:"
+          echo "- Rootfs finalized from RC"
+          echo "- See receipt for package updates"
+        } > release-body/body

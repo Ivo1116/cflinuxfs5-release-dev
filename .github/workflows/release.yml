@@ -1,0 +1,365 @@
+name: Release Rootfs
+
+on:
+  repository_dispatch:
+    types: [rootfs-tests-completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: RC version to release (e.g. 1.2.3-rc.4)
+        required: true
+      skip_github_release:
+        description: Skip GitHub release
+        type: boolean
+        default: false
+      skip_docker_release:
+        description: Skip Docker release
+        type: boolean
+        default: false
+      skip_bosh_release:
+        description: Skip BOSH release
+        type: boolean
+        default: false
+
+env:
+  STACK: cflinuxfs5
+  ROOTFS_REPO: ivo1116/cflinuxfs5
+  RELEASE_REPO: ivo1116/cflinuxfs5-release
+  DOCKER_IMAGE: cloudfoundry/cflinuxfs5
+  BUCKET_NAME: cflinuxfs5test
+  DEFAULT_BRANCH: main
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+concurrency:
+  group: cflinuxfs5-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash -euo pipefail
+
+jobs:
+  resolve-inputs:
+    name: Resolve Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      rc_version: ${{ steps.out.outputs.rc_version }}
+      final_version: ${{ steps.final.outputs.final_version }}
+      previous_tag: ${{ steps.previous.outputs.previous_tag }}
+      proceed: ${{ steps.guard.outputs.proceed }}
+    steps:
+      - name: Compute RC version
+        id: out
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "rc_version=${{ github.event.client_payload.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "rc_version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preflight guard
+        id: guard
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            cats="${{ github.event.client_payload.cats_passed }}"
+            if [[ "$cats" != "true" && "$cats" != "skipped" ]]; then
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Finalize version (rc -> final)
+        id: final
+        uses: ./.github/actions/finalize-version
+        with:
+          rc_version: ${{ steps.out.outputs.rc_version }}
+
+      - name: Get previous release tag
+        id: previous
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CFLINUXFS5_TOKEN }}
+          script: |
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: 'ivo1116',
+              repo: 'cflinuxfs5',
+              per_page: 1
+            });
+            core.setOutput('previous_tag', releases.length ? releases[0].tag_name : '');
+
+  release-rootfs-repo:
+    name: Release Rootfs Repo
+    runs-on: ubuntu-latest
+    needs: [resolve-inputs]
+    if: needs.resolve-inputs.outputs.proceed == 'true'
+    outputs:
+      final_version: ${{ steps.vars.outputs.final_version }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
+    steps:
+      - name: Set vars
+        id: vars
+        run: |
+          echo "final_version=${{ needs.resolve-inputs.outputs.final_version }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout rootfs repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ROOTFS_REPO }}
+          ref: ${{ env.DEFAULT_BRANCH }}
+          path: rootfs
+          token: ${{ env.CFLINUXFS5_TOKEN }}
+          persist-credentials: false
+
+      - name: Download RC stack from S3
+        uses: ./.github/actions/download-s3
+        with:
+          stack: ${{ env.STACK }}
+          version: ${{ needs.resolve-inputs.outputs.rc_version }}
+          bucket-name: ${{ env.BUCKET_NAME }}
+          artifact-type: stack
+
+      - name: Download RC receipt from S3
+        uses: ./.github/actions/download-s3
+        with:
+          stack: ${{ env.STACK }}
+          version: ${{ needs.resolve-inputs.outputs.rc_version }}
+          bucket-name: ${{ env.BUCKET_NAME }}
+          artifact-type: receipt
+
+      - name: Update receipt to final
+        uses: ./.github/actions/update-rootfs-receipt
+        with:
+          stack: ${{ env.STACK }}
+          rc_version: ${{ needs.resolve-inputs.outputs.rc_version }}
+          final_version: ${{ needs.resolve-inputs.outputs.final_version }}
+
+      - name: Update archive filename to final
+        uses: ./.github/actions/update-rootfs-filename
+        with:
+          stack: ${{ env.STACK }}
+          rc_version: ${{ needs.resolve-inputs.outputs.rc_version }}
+          final_version: ${{ needs.resolve-inputs.outputs.final_version }}
+
+      - name: Sync final artifacts to expected upload paths
+        run: |
+          mkdir -p rootfs-artifacts receipt-artifacts
+          cp "rootfs-archive/${{ env.STACK }}-${{ needs.resolve-inputs.outputs.final_version }}.tar.gz" \
+             "rootfs-artifacts/${{ env.STACK }}-${{ needs.resolve-inputs.outputs.final_version }}.tar.gz"
+          cp "receipt-archive/receipt.${{ env.STACK }}.x86_64-${{ needs.resolve-inputs.outputs.final_version }}" \
+             "receipt-artifacts/receipt.${{ env.STACK }}.x86_64-${{ needs.resolve-inputs.outputs.final_version }}"
+
+      - name: Commit and tag in rootfs repo
+        uses: ./.github/actions/commit-and-tag-rootfs
+        with:
+          repo_dir: rootfs
+          receipt_path: receipt-archive/receipt.${{ env.STACK }}.x86_64-${{ needs.resolve-inputs.outputs.final_version }}
+          tag: ${{ needs.resolve-inputs.outputs.final_version }}
+          git_user_name: cflinuxfs5-bot
+          git_user_email: cflinuxfs5-bot@test.com
+          push_token: ${{ env.CFLINUXFS5_TOKEN }}
+
+      - name: Upload final stack to S3
+        uses: ./.github/actions/upload-s3
+        with:
+          upload-type: stack-s3
+          version: ${{ needs.resolve-inputs.outputs.final_version }}
+          bucket-name: ${{ env.BUCKET_NAME }}
+
+      # Concourse release job doesn't re-upload the receipt; it only uploads the final tarball.
+      # If you want the final receipt in S3 too, uncomment the block below.
+      # - name: Upload final receipt to S3
+      #   uses: ./.github/actions/upload-s3
+      #   with:
+      #     upload-type: receipt-s3
+      #     version: ${{ needs.resolve-inputs.outputs.final_version }}
+      #     bucket-name: ${{ env.BUCKET_NAME }}
+
+  reset-version-to-rc:
+    name: Reset Minor to Next RC
+    runs-on: ubuntu-latest
+    needs: [release-rootfs-repo]
+    outputs:
+      next_rc: ${{ steps.bump.outputs.next_rc }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Bump to next minor rc
+        id: bump
+        uses: ./.github/actions/bump-next-minor-rc
+        with:
+          final_version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+
+      - name: Persist next RC to S3 (versions/stack-cflinuxfs5)
+        uses: ./.github/actions/update-version-s3
+        with:
+          bucket-name: ${{ env.BUCKET_NAME }}
+          key: versions/stack-${{ env.STACK }}
+          version: ${{ steps.bump.outputs.next_rc }}
+
+  upload-to-github:
+    name: Upload to GitHub
+    runs-on: ubuntu-latest
+    needs: [release-rootfs-repo, resolve-inputs]
+    if: inputs.skip_github_release != true
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
+    steps:
+      - name: Download final stack from S3
+        uses: ./.github/actions/download-s3
+        with:
+          stack: ${{ env.STACK }}
+          version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          bucket-name: ${{ env.BUCKET_NAME }}
+          artifact-type: stack
+
+      - name: Generate release notes
+        uses: ./.github/actions/generate-release-notes
+        with:
+          stack: ${{ env.STACK }}
+          current_version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          previous_version: ${{ needs.resolve-inputs.outputs.previous_tag }}
+
+      - name: Create GitHub Release
+        uses: ./.github/actions/create-gh-release
+        with:
+          token: ${{ env.CFLINUXFS5_TOKEN }}
+          tag: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          name: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          body_file: release-body/body
+          asset_glob: rootfs-artifacts/${{ env.STACK }}-*.tar.gz
+          owner: ivo1116 
+          repo: cflinuxfs5
+
+  upload-to-docker:
+    name: Upload to Docker Hub
+    runs-on: ubuntu-latest
+    needs: [release-rootfs-repo]
+    if: inputs.skip_docker_release != true
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Download final stack from S3
+        uses: ./.github/actions/download-s3
+        with:
+          stack: ${{ env.STACK }}
+          version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          bucket-name: ${{ env.BUCKET_NAME }}
+          artifact-type: stack
+
+      - name: Prepare docker import tar
+        uses: ./.github/actions/rename-rootfs-for-docker
+        with:
+          stack: ${{ env.STACK }}
+
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Import and push tags
+        uses: ./.github/actions/docker-import-and-push
+        with:
+          image: ${{ env.DOCKER_IMAGE }}
+          version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          tar_path: docker-s3/${{ env.STACK }}.tar.gz
+
+  create-bosh-release:
+    name: Create BOSH Release
+    runs-on: ubuntu-latest
+    needs: [release-rootfs-repo]
+    if: inputs.skip_bosh_release != true
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.CFLINUXFS5_BLOBS_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.CFLINUXFS5_BLOBS_AWS_SECRET_ACCESS_KEY }}
+      CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
+      BUCKET_NAME: ${{ env.BUCKET_NAME }}
+    steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.RELEASE_REPO }}
+          ref: ${{ env.DEFAULT_BRANCH }}
+          path: release
+          token: ${{ env.CFLINUXFS5_TOKEN }}
+          persist-credentials: false
+
+      - name: Download final stack from S3
+        uses: ./.github/actions/download-s3
+        with:
+          stack: ${{ env.STACK }}
+          version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+          bucket-name: ${{ env.BUCKET_NAME }}
+          artifact-type: stack
+
+      - name: Create final BOSH release
+        uses: ./.github/actions/create-bosh-release
+        with:
+          release_dir: release
+          blob_name: rootfs
+          blob_glob: rootfs-artifacts/${{ env.STACK }}-*.tar.gz
+          release_name: ${{ env.STACK }}
+          version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+
+      - name: Create BOSH release notes
+        uses: ./.github/actions/create-bosh-release-notes
+        with:
+          stack: ${{ env.STACK }}
+          version: ${{ needs.release-rootfs-repo.outputs.final_version }}
+
+      - name: Commit and push release repo
+        id: rel_commit
+        uses: ./.github/actions/create-bosh-release-commit
+        with:
+          release_dir: release
+          git_user_name: cflinuxfs5-bot
+          git_user_email: cflinuxfs5-bot@test.com
+          push_token: ${{ env.CFLINUXFS5_TOKEN }}
+
+      - name: Publish BOSH GitHub Release
+        uses: ./.github/actions/create-gh-release
+        with:
+          token: ${{ env.CFLINUXFS5_TOKEN }}
+          tag: v${{ needs.release-rootfs-repo.outputs.final_version }}
+          name: v${{ needs.release-rootfs-repo.outputs.final_version }}
+          body_file: release-body/body
+          asset_glob: release-artifacts/releases/${{ env.STACK }}/*.tgz
+          owner: ivo1116
+          repo: cflinuxfs5-release
+          target_commitish: ${{ steps.rel_commit.outputs.commit_sha }}
+
+  summary:
+    name: Release Summary
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-inputs
+      - release-rootfs-repo
+      - reset-version-to-rc
+      - upload-to-github
+      - upload-to-docker
+      - create-bosh-release
+    if: always()
+    steps:
+      - name: Summarize
+        run: |
+          echo "## Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Final Version**: ${{ needs.release-rootfs-repo.outputs.final_version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next RC**: ${{ needs.reset-version-to-rc.outputs.next_rc }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rootfs repo: ${{ needs.release-rootfs-repo.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- GitHub Release: ${{ needs.upload-to-github.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Docker: ${{ needs.upload-to-docker.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- BOSH Release: ${{ needs.create-bosh-release.result }}" >> "$GITHUB_STEP_SUMMARY"

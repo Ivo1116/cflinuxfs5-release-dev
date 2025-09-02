@@ -1,0 +1,44 @@
+name: Commit BOSH Release Repo
+description: Commit and push changes; outputs the commit SHA
+inputs:
+  release_dir:
+    description: Path to the BOSH release repository
+    required: true
+  git_user_name:
+    description: Git user.name for commit
+    required: true
+  git_user_email:
+    description: Git user.email for commit
+    required: true
+  push_token:
+    description: GitHub token to push to remote
+    required: true
+outputs:
+  commit_sha:
+    description: Commit SHA of the pushed commit
+    value: ${{ steps.commit.outputs.commit_sha }}
+runs:
+  using: composite
+  steps:
+    - id: commit
+      shell: bash
+      run: |
+        set -euo pipefail
+        pushd "${{ inputs.release_dir }}"
+          git config user.name "${{ inputs.git_user_name }}"
+          git config user.email "${{ inputs.git_user_email }}"
+
+          git add -A
+          if git diff --staged --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "Finalize release ${STACK}"
+          fi
+
+          git remote set-url origin \
+            "https://x-access-token:${{ inputs.push_token }}@github.com/${RELEASE_REPO}.git"
+
+          git push origin "${DEFAULT_BRANCH:-main}"
+          sha=$(git rev-parse HEAD)
+          echo "commit_sha=$sha" >> "$GITHUB_OUTPUT"
+        popd

@@ -1,0 +1,41 @@
+name: Create Final BOSH Release
+description: Create a final BOSH release using the provided rootfs blob
+inputs:
+  release_dir:
+    description: Path to the BOSH release repository
+    required: true
+  blob_name:
+    description: Blobstore directory name (e.g. rootfs)
+    required: true
+  blob_glob:
+    description: Glob for rootfs blob tarballs to add
+    required: true
+  release_name:
+    description: BOSH release name
+    required: true
+  version:
+    description: Release version to finalize
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        ver="7.5.6"
+        url="https://github.com/cloudfoundry/bosh-cli/releases/download/v${ver}/bosh-cli-${ver}-linux-amd64"
+        sudo curl -fsSL "$url" -o /usr/local/bin/bosh
+        sudo chmod +x /usr/local/bin/bosh
+
+        pushd "${{ inputs.release_dir }}"
+          for f in ../${{ inputs.blob_glob }}; do
+            test -f "$f" || { echo "Missing blob $f"; exit 1; }
+            base=$(basename "$f")
+            bosh add-blob "$f" "${{ inputs.blob_name }}/${base}"
+          done
+          mkdir -p ../release-artifacts
+          bosh -n create-release --final \
+            --name "${{ inputs.release_name }}" \
+            --version "${{ inputs.version }}" \
+            --tarball "../release-artifacts/${{ inputs.release_name }}-${{ inputs.version }}.tgz"
+        popd

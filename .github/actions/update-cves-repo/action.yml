@@ -1,0 +1,12 @@
+name: Update CVEs Repo
+description: Optional placeholder to update robots repo
+inputs:
+  token:
+    description: GitHub token for robots repo
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "No-op CVEs update (placeholder)."
