@@ -288,10 +288,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [release-rootfs-repo]
     if: inputs.skip_bosh_release != true
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.CFLINUXFS5_BLOBS_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.CFLINUXFS5_BLOBS_AWS_SECRET_ACCESS_KEY }}
-      CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
     steps:
       - name: Checkout self
         uses: actions/checkout@v4
