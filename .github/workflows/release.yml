@@ -40,7 +40,7 @@ concurrency:
 
 defaults:
   run:
-    shell: bash -euo pipefail
+    shell: bash -euo pipefail {0}
 
 jobs:
   resolve-inputs:
