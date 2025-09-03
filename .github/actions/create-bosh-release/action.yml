@@ -33,7 +33,7 @@ inputs:
 outputs:
   release-tarball:
     description: Path to the generated final BOSH release tarball
-    value: ${{ steps.build.outputs.release-tarball }}
+    value: ${{ steps.set-output.outputs.release-tarball }}
 
 runs:
   using: "composite"
@@ -69,8 +69,23 @@ runs:
         sudo mv /tmp/bosh /usr/local/bin/bosh
         bosh --version
 
-    - name: Build or Skip Final BOSH release
+    - name: Check if final release already exists
+      id: check-release
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${{ inputs.release_dir }}"
+        if [[ -f "releases/${{ inputs.release_name }}/${{ inputs.release_name }}-${{ inputs.version }}.yml" ]]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "release-tarball=../release-artifacts/${{ inputs.release_name }}-${{ inputs.version }}.tgz" >> $GITHUB_OUTPUT
+          echo "Final release ${{ inputs.release_name }}/${{ inputs.version }} already exists in repo. Skipping."
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build Final BOSH release
       id: build
+      if: steps.check-release.outputs.exists == 'false'
       shell: bash
       run: |
         set -euo pipefail
@@ -79,13 +94,6 @@ runs:
         GO_VERSION="${{ inputs.go-version }}"
 
         cd "${{ inputs.release_dir }}"
-
-        # Check if final release already exists in repo
-        if [[ -f "releases/${{ inputs.release_name }}/${{ inputs.release_name }}-${VERSION}.yml" ]]; then
-          echo "Final release ${{ inputs.release_name }}/${{ inputs.version }} already exists in repo. Skipping build."
-          echo "release-tarball=../release-artifacts/${{ inputs.release_name }}-${VERSION}.tgz" >> $GITHUB_OUTPUT
-          exit 0
-        fi
 
         # Vendor golang-1-linux package
         bosh vendor-package golang-1-linux ../bosh-package-golang-release
@@ -121,3 +129,13 @@ runs:
           --force
 
         echo "release-tarball=../release-artifacts/${{ inputs.release_name }}-${VERSION}.tgz" >> $GITHUB_OUTPUT
+
+    - name: Set output
+      id: set-output
+      shell: bash
+      run: |
+        if [[ -n "${{ steps.build.outputs.release-tarball || '' }}" ]]; then
+          echo "release-tarball=${{ steps.build.outputs.release-tarball }}" >> $GITHUB_OUTPUT
+        else
+          echo "release-tarball=${{ steps.check-release.outputs.release-tarball }}" >> $GITHUB_OUTPUT
+        fi
