@@ -19,6 +19,21 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Add blobs
+      shell: bash
+      run: |
+        set -euo pipefail
+        pushd "${{ inputs.release_dir }}"
+          for f in ../${{ inputs.blob_glob }}; do
+            test -f "$f" || { echo "Missing blob $f"; exit 1; }
+            base=$(basename "$f")
+            bosh add-blob "$f" "${{ inputs.blob_name }}/${base}"
+          done
+          git config user.name "cflinuxfs5-bot"
+          git config user.email "cflinuxfs5-bot@test.com"
+          git add config/blobs.yml
+          git commit -m "Add blobs for ${{ inputs.release_name }} ${{ inputs.version }}" || echo "No changes to commit"
+        popd
     - shell: bash
       run: |
         set -euo pipefail
