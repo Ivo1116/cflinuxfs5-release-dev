@@ -19,6 +19,17 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install BOSH CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        ver="7.5.6"
+        url="https://github.com/cloudfoundry/bosh-cli/releases/download/v${ver}/bosh-cli-${ver}-linux-amd64"
+        curl -fsSL "$url" -o bosh
+        chmod +x bosh
+        sudo mv bosh /usr/local/bin/bosh
+        bosh --version
+
     - name: Add blobs
       shell: bash
       run: |
@@ -34,6 +45,7 @@ runs:
           git add config/blobs.yml
           git commit -m "Add blobs for ${{ inputs.release_name }} ${{ inputs.version }}" || echo "No changes to commit"
         popd
+
     - shell: bash
       run: |
         set -euo pipefail
