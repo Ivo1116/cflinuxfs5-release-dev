@@ -306,15 +306,6 @@ jobs:
           token: ${{ env.CFLINUXFS5_TOKEN }}
           persist-credentials: false
 
-      - name: debug
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo ${{ env.STACK }}
-          echo ${{ env.BUCKET_NAME }}
-          echo ${{ secrets.CFLINUXFS5_BLOBS_AWS_ACCESS_KEY_ID }}
-          echo ${{ needs.release-rootfs-repo.outputs.final_version }}
-
       - name: Download final stack from S3
         uses: ./.github/actions/download-s3
         with:
