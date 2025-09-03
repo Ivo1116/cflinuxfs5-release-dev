@@ -33,7 +33,7 @@ inputs:
 outputs:
   release-tarball:
     description: Path to the generated final BOSH release tarball
-    value: ${{ steps.set-output.outputs.release-tarball }}
+    value: ${{ steps.build.outputs.release-tarball }}
 
 runs:
   using: "composite"
@@ -69,7 +69,7 @@ runs:
         sudo mv /tmp/bosh /usr/local/bin/bosh
         bosh --version
 
-    - name: Build Final BOSH release
+    - name: Build or Skip Final BOSH release
       id: build
       shell: bash
       run: |
@@ -80,14 +80,17 @@ runs:
 
         cd "${{ inputs.release_dir }}"
 
-        if bosh inspect-release "${{ inputs.release_name }}/${{ inputs.version }}" >/dev/null 2>&1; then
-          echo "Final release ${{ inputs.release_name }}/${{ inputs.version }} already exists. Skipping build."
+        # Check if final release already exists in repo
+        if [[ -f "releases/${{ inputs.release_name }}/${{ inputs.release_name }}-${VERSION}.yml" ]]; then
+          echo "Final release ${{ inputs.release_name }}/${{ inputs.version }} already exists in repo. Skipping build."
           echo "release-tarball=../release-artifacts/${{ inputs.release_name }}-${VERSION}.tgz" >> $GITHUB_OUTPUT
           exit 0
         fi
 
+        # Vendor golang-1-linux package
         bosh vendor-package golang-1-linux ../bosh-package-golang-release
 
+        # Ensure Go blob is present
         GO_BLOB_DIR="blobs/golang-1-linux"
         GO_BLOB_FILE="go${GO_VERSION}.linux-amd64.tar.gz"
         mkdir -p "${GO_BLOB_DIR}"
@@ -100,13 +103,16 @@ runs:
           echo "Go blob already present: ${GO_BLOB_DIR}/${GO_BLOB_FILE}"
         fi
 
+        # Add final rootfs tarball
         mkdir -p blobs/rootfs
         bosh remove-blob rootfs/${STACK}-*.tar.gz || true
         cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/${STACK}-${VERSION}.tar.gz
         bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
 
+        # Sync blobs to blobstore
         bosh sync-blobs
 
+        # Create final release tarball
         mkdir -p ../release-artifacts
         bosh create-release --final \
           --name "${{ inputs.release_name }}" \
