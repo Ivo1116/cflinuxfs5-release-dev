@@ -33,8 +33,6 @@ jobs:
           cves_repo_path: new-cves
     env:
       CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
-      GITHUB_REPO: cflinuxfs5
-      GITHUB_OWNER: ivo1116
 
   bump-golang-package:
     name: Bump Golang Package
@@ -112,6 +110,10 @@ jobs:
     outputs:
       previous-version: ${{ steps.previous-release.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
+    env:
+      GITHUB_OWNER: ivo1116
+      GITHUB_REPO: cflinuxfs5
+
     steps:
       - name: Log build reason
         run: |
