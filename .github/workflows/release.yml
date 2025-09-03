@@ -30,6 +30,7 @@ env:
   BUCKET_NAME: cflinuxfs5test
   DEFAULT_BRANCH: main
   CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN  }}
+  DOCKERHUB_USERNAME: ivo1116
 
 permissions:
   contents: write
@@ -274,7 +275,7 @@ jobs:
       - name: Docker login
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Import and push tags
