@@ -26,7 +26,7 @@ env:
   STACK: cflinuxfs5
   ROOTFS_REPO: ivo1116/cflinuxfs5
   RELEASE_REPO: ivo1116/cflinuxfs5-release
-  DOCKER_IMAGE: cloudfoundry/cflinuxfs5
+  DOCKER_IMAGE: ivo1116/cflinuxfs5
   BUCKET_NAME: cflinuxfs5test
   DEFAULT_BRANCH: main
   CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN  }}
