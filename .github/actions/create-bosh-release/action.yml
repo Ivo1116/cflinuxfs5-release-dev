@@ -1,85 +1,116 @@
 name: Create Final BOSH Release
-description: Create a final BOSH release using the provided rootfs blob
+description: Create a final BOSH release tarball with vendored golang-1-linux and a rootfs blob
+
 inputs:
   release_dir:
     description: Path to the BOSH release repository
     required: true
-  blob_glob:
-    description: Glob for final rootfs tarball (e.g. rootfs-artifacts/cflinuxfs5-*.tar.gz)
-    required: true
-  release_name:
-    description: BOSH release name
+  stack:
+    description: Stack name (e.g., cflinuxfs5)
     required: true
   version:
-    description: Release version to finalize
+    description: Final version number (e.g., 1.0.0)
     required: true
+  release_name:
+    description: BOSH release name (e.g., cflinuxfs5)
+    required: true
+  release_repo:
+    description: GitHub org/repo for the BOSH release (e.g., ivo1116/cflinuxfs5-release)
+    required: true
+  bosh-cli-version:
+    description: Version of bosh-cli to install
+    required: false
+    default: "7.5.6"
+  go-version:
+    description: Go version to vendor as a blob under golang-1-linux (e.g., 1.24.6)
+    required: false
+    default: "1.24.6"
+  golang-release-ref:
+    description: Git ref (tag/branch/commit) of bosh-package-golang-release to vendor from
+    required: false
+    default: "main"
+
+outputs:
+  release-tarball:
+    description: Path to the generated final BOSH release tarball
+    value: ${{ steps.build.outputs.release-tarball }}
 
 runs:
-  using: composite
+  using: "composite"
   steps:
-    - name: Install BOSH CLI
+    - name: Install prerequisites
       shell: bash
       run: |
         set -euo pipefail
-        ver="7.5.6"
-        url="https://github.com/cloudfoundry/bosh-cli/releases/download/v${ver}/bosh-cli-${ver}-linux-amd64"
-        curl -fsSL "$url" -o bosh
-        chmod +x bosh
-        sudo mv bosh /usr/local/bin/bosh
+        sudo apt-get update -y
+        sudo apt-get install -y curl wget git jq
+
+    - name: Checkout Release repo
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.release_repo }}
+        ref: main
+        path: ${{ inputs.release_dir }}
+
+    - name: Checkout bosh-package-golang-release
+      uses: actions/checkout@v4
+      with:
+        repository: cloudfoundry/bosh-package-golang-release
+        ref: ${{ inputs.golang-release-ref }}
+        path: bosh-package-golang-release
+
+    - name: Install bosh CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.bosh-cli-version }}"
+        wget -O /tmp/bosh "https://github.com/cloudfoundry/bosh-cli/releases/download/v${VERSION}/bosh-cli-${VERSION}-linux-amd64"
+        chmod +x /tmp/bosh
+        sudo mv /tmp/bosh /usr/local/bin/bosh
         bosh --version
 
-    - name: Clean up stale RC blobs
+    - name: Build Final BOSH release
+      id: build
       shell: bash
       run: |
         set -euo pipefail
-        pushd "${{ inputs.release_dir }}"
-          if [[ -f config/blobs.yml ]]; then
-            if grep -q 'cflinuxfs5/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml; then
-              grep -o 'cflinuxfs5/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml | while read -r blob; do
-                echo "Removing stale RC blob: $blob"
-                bosh remove-blob "$blob" || true
-              done
-            else
-              echo "No RC blobs to remove"
-            fi
-          fi
-        popd
+        STACK="${{ inputs.stack }}"
+        VERSION="${{ inputs.version }}"
+        GO_VERSION="${{ inputs.go-version }}"
 
-    - name: Add final rootfs blob
-      shell: bash
-      run: |
-        set -euo pipefail
-        pushd "${{ inputs.release_dir }}"
-          for f in ../${{ inputs.blob_glob }}; do
-            test -f "$f" || { echo "Missing rootfs tarball $f"; exit 1; }
-            base=$(basename "$f")
-            echo "Adding final rootfs blob: $base"
-            # Add under cflinuxfs5/ path (matches package spec)
-            bosh add-blob "$f" "cflinuxfs5/${base}"
-          done
-        popd
+        cd "${{ inputs.release_dir }}"
 
-    - name: Verify golang-1-linux blob exists
-      shell: bash
-      run: |
-        set -euo pipefail
-        pushd "${{ inputs.release_dir }}"
-          if ! grep -q "golang-1-linux/" config/blobs.yml; then
-            echo "ERROR: Missing golang-1-linux blob in blobs.yml"
-            echo "You must run the bump-golang-package job to update it."
-            exit 1
-          fi
-        popd
+        # Vendor golang-1-linux package
+        bosh vendor-package golang-1-linux ../bosh-package-golang-release
 
-    - name: Create final BOSH release
-      shell: bash
-      run: |
-        set -euo pipefail
-        pushd "${{ inputs.release_dir }}"
-          mkdir -p ../release-artifacts
-          bosh -n create-release --final \
-            --name "${{ inputs.release_name }}" \
-            --version "${{ inputs.version }}" \
-            --tarball "../release-artifacts/${{ inputs.release_name }}-${{ inputs.version }}.tgz" \
-            --force
-        popd
+        # Ensure Go blob is present
+        GO_BLOB_DIR="blobs/golang-1-linux"
+        GO_BLOB_FILE="go${GO_VERSION}.linux-amd64.tar.gz"
+        mkdir -p "${GO_BLOB_DIR}"
+
+        if [ ! -f "${GO_BLOB_DIR}/${GO_BLOB_FILE}" ]; then
+          echo "Downloading Go ${GO_VERSION} blob from go.dev..."
+          curl -L "https://go.dev/dl/${GO_BLOB_FILE}" -o "${GO_BLOB_DIR}/${GO_BLOB_FILE}"
+          bosh add-blob "${GO_BLOB_DIR}/${GO_BLOB_FILE}" "golang-1-linux/${GO_BLOB_FILE}"
+        else
+          echo "Go blob already present: ${GO_BLOB_DIR}/${GO_BLOB_FILE}"
+        fi
+
+        # Add final rootfs tarball
+        mkdir -p blobs/rootfs
+        bosh remove-blob rootfs/${STACK}-*.tar.gz || true
+        cp ../rootfs-artifacts/${STACK}-${VERSION}.tar.gz blobs/rootfs/${STACK}-${VERSION}.tar.gz
+        bosh add-blob blobs/rootfs/${STACK}-${VERSION}.tar.gz rootfs/${STACK}-${VERSION}.tar.gz
+
+        # Sync blobs to blobstore
+        bosh sync-blobs
+
+        # Create final release tarball
+        mkdir -p ../release-artifacts
+        bosh create-release --final \
+          --name "${{ inputs.release_name }}" \
+          --version "${VERSION}" \
+          --tarball "../release-artifacts/${{ inputs.release_name }}-${VERSION}.tgz" \
+          --force
+
+        echo "release-tarball=../release-artifacts/${{ inputs.release_name }}-${VERSION}.tgz" >> $GITHUB_OUTPUT
