@@ -21,27 +21,30 @@ on:
         description: 'Skip Deploy CF'
         type: boolean
         default: true
+
 jobs:
-  get-version:
-    name: Get Version
+  resolve-inputs:
+    name: Resolve Inputs
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.get-version.outputs.version }}
+      version: ${{ steps.set-vars.outputs.version }}
+      skip_cleanup: ${{ steps.set-vars.outputs.skip_cleanup }}
+      skip_setup: ${{ steps.set-vars.outputs.skip_setup }}
+      skip_deploy: ${{ steps.set-vars.outputs.skip_deploy }}
     steps:
-      - name: Get version info
-        id: get-version
+      - name: Normalize inputs
+        id: set-vars
         run: |
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            echo "version=${{ github.event.client_payload.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          fi
+          echo "version=${{ github.event.client_payload.version || github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          echo "skip_cleanup=${{ github.event.client_payload.skip_cleanup || github.event.inputs.skip_cleanup || 'true' }}" >> $GITHUB_OUTPUT
+          echo "skip_setup=${{ github.event.client_payload.skip_setup || github.event.inputs.skip_setup || 'true' }}" >> $GITHUB_OUTPUT
+          echo "skip_deploy=${{ github.event.client_payload.skip_deploy || github.event.inputs.skip_deploy || 'true' }}" >> $GITHUB_OUTPUT
 
   setup-test-environment:
     name: Setup Test Environment
-    needs: [get-version]
+    needs: [resolve-inputs]
     runs-on: ubuntu-latest
-    if: inputs.skip_setup != true
+    if: needs.resolve-inputs.outputs.skip_setup != 'true'
     outputs:
       environment_ready: ${{ steps.bbl-up.outputs.success }}
     steps:
@@ -52,7 +55,7 @@ jobs:
         if: env.BUILD_RUN_ID != ''
         uses: actions/download-artifact@v4
         with:
-          name: rootfs-build-${{ needs.get-version.outputs.version }}
+          name: rootfs-build-${{ needs.resolve-inputs.outputs.version }}
           github-token: ${{ secrets.CFLINUXFS5_TOKEN }}
           run-id: ${{ env.BUILD_RUN_ID }}
 
@@ -61,7 +64,7 @@ jobs:
         uses: ./.github/actions/bbl-up
         with:
           stack: cflinuxfs5
-          version: ${{ needs.get-version.outputs.version }}
+          version: ${{ needs.resolve-inputs.outputs.version }}
           env_name: cflinuxfs5
           gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
           bbl_state_repo: ivo1116/buildpacks-envs
@@ -74,12 +77,12 @@ jobs:
 
   deploy-cf:
     name: Deploy CF with New Rootfs
-    needs: [setup-test-environment, get-version]
+    needs: [setup-test-environment, resolve-inputs]
     runs-on: ubuntu-latest
-    if: always() && (inputs.skip_deploy != true || needs.setup-test-environment.result == 'success')
+    if: always() && (needs.resolve-inputs.outputs.skip_deploy != 'true' || needs.setup-test-environment.result == 'success')
     outputs:
       deployment_ready: ${{ steps.deploy.outputs.success }}
-      version: ${{ needs.get-version.outputs.version }}
+      version: ${{ needs.resolve-inputs.outputs.version }}
     steps:
       - name: Checkout self
         uses: actions/checkout@v4
@@ -90,7 +93,7 @@ jobs:
         with:
           stack: cflinuxfs5
           env_name: cflinuxfs5
-          version: ${{ needs.get-version.outputs.version }}
+          version: ${{ needs.resolve-inputs.outputs.version }}
           bbl_state_repo: ivo1116/buildpacks-envs
           bbl_state_branch: main
         env:
@@ -103,12 +106,12 @@ jobs:
 
   run-cats:
     name: Run Cloud Foundry Acceptance Tests
-    needs: [deploy-cf, get-version]
+    needs: [deploy-cf, resolve-inputs]
     runs-on: ubuntu-latest
     continue-on-error: true
     if: |
       always() && (
-        (inputs.skip_deploy == true) || 
+        (needs.resolve-inputs.outputs.skip_deploy == 'true') || 
         (needs.deploy-cf.result == 'success')
       )
     outputs:
@@ -135,11 +138,11 @@ jobs:
 
   check-race-condition:
     name: Check for Race Conditions
-    needs: [deploy-cf, run-cats]
+    needs: [deploy-cf, run-cats, resolve-inputs]
     runs-on: ubuntu-latest
     if: |
       always() && (
-        inputs.skip_deploy == true ||
+        needs.resolve-inputs.outputs.skip_deploy == 'true' ||
         needs.deploy-cf.result == 'success'
       )
     outputs:
@@ -159,12 +162,12 @@ jobs:
 
   cleanup-deployments:
     name: Cleanup CF Deployments
-    needs: [setup-test-environment, deploy-cf, run-cats, check-race-condition]
+    needs: [setup-test-environment, deploy-cf, run-cats, check-race-condition, resolve-inputs]
     runs-on: ubuntu-latest
     if: |
       always() && 
       needs.deploy-cf.result == 'success' &&
-      inputs.skip_cleanup != true
+      needs.resolve-inputs.outputs.skip_cleanup != 'true'
     steps:
       - name: Checkout self
         uses: actions/checkout@v4
@@ -179,13 +182,13 @@ jobs:
 
   destroy-test-environment:
     name: Destroy Test Environment
-    needs: [setup-test-environment, cleanup-deployments]
+    needs: [setup-test-environment, cleanup-deployments, resolve-inputs]
     runs-on: ubuntu-latest
     if: |
       always() && 
-      inputs.skip_setup != true &&
+      needs.resolve-inputs.outputs.skip_setup != 'true' &&
       needs.setup-test-environment.result == 'success' && 
-      inputs.skip_cleanup != true
+      needs.resolve-inputs.outputs.skip_cleanup != 'true'
     steps:
       - name: Checkout self
         uses: actions/checkout@v4
@@ -203,12 +206,12 @@ jobs:
 
   trigger-release-workflow:
     name: Trigger Release Workflow
-    needs: [deploy-cf, run-cats, check-race-condition]
+    needs: [deploy-cf, run-cats, check-race-condition, resolve-inputs]
     runs-on: ubuntu-latest
     if: |
       always() && 
       needs.deploy-cf.outputs.deployment_ready == 'true' &&
-      (needs.run-cats.outputs.cats_passed == 'true' || inputs.skip_cats == true) &&
+      (needs.run-cats.outputs.cats_passed == 'true') &&
       needs.check-race-condition.outputs.race_check_passed == 'true'
     steps:
       - name: Trigger Release Workflow
@@ -218,15 +221,13 @@ jobs:
           event-type: rootfs-tests-completed
           client-payload: |
             {
-              "version": "${{ needs.deploy-cf.outputs.version }}",
-              "cats_passed": "${{ needs.run-cats.outputs.cats_passed || 'skipped' }}",
-              "workflow_run_id": "${{ github.run_id }}"
+              "version": "${{ needs.deploy-cf.outputs.version }}"
             }
 
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [setup-test-environment, get-version, deploy-cf, run-cats, check-race-condition, cleanup-deployments, destroy-test-environment]
+    needs: [setup-test-environment, resolve-inputs, deploy-cf, run-cats, check-race-condition, cleanup-deployments, destroy-test-environment]
     if: always()
     steps:
       - name: Test Summary
@@ -234,7 +235,7 @@ jobs:
           echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [[ "${{ inputs.skip_setup }}" == "true" ]]; then
+          if [[ "${{ needs.resolve-inputs.outputs.skip_setup }}" == "true" ]]; then
             echo "**Environment Setup**: Skipped" >> $GITHUB_STEP_SUMMARY
           elif [[ "${{ needs.setup-test-environment.result }}" == "success" ]]; then
             echo "**Environment Setup**: Success" >> $GITHUB_STEP_SUMMARY
@@ -248,9 +249,7 @@ jobs:
             echo "**CF Deployment**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ inputs.skip_cats }}" == "true" ]]; then
-            echo "**CATs**: Skipped" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.run-cats.outputs.cats_passed }}" == "true" ]]; then
+          if [[ "${{ needs.run-cats.outputs.cats_passed }}" == "true" ]]; then
             echo "**CATs**: Passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "**CATs**: Failed" >> $GITHUB_STEP_SUMMARY
@@ -267,7 +266,7 @@ jobs:
           
           # Determine overall result
           if [[ "${{ needs.deploy-cf.outputs.deployment_ready }}" == "true" && \
-                ("${{ needs.run-cats.outputs.cats_passed }}" == "true" || "${{ inputs.skip_cats }}" == "true") && \
+                "${{ needs.run-cats.outputs.cats_passed }}" == "true" && \
                 "${{ needs.check-race-condition.outputs.race_check_passed }}" == "true" ]]; then
             echo "**Overall Result**: All tests passed - ready for release" >> $GITHUB_STEP_SUMMARY
           else
