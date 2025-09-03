@@ -326,7 +326,6 @@ jobs:
         uses: ./.github/actions/create-bosh-release
         with:
           release_dir: release
-          blob_name: rootfs
           blob_glob: rootfs-artifacts/${{ env.STACK }}-*.tar.gz
           release_name: ${{ env.STACK }}
           version: ${{ needs.release-rootfs-repo.outputs.final_version }}
