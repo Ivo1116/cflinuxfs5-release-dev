@@ -69,8 +69,22 @@ runs:
         sudo mv /tmp/bosh /usr/local/bin/bosh
         bosh --version
 
+    - name: Check if final release already exists
+      id: check-release
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${{ inputs.release_dir }}"
+        if bosh inspect-release "${{ inputs.release_name }}/${{ inputs.version }}" >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Final release ${{ inputs.release_name }}/${{ inputs.version }} already exists. Skipping."
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Build Final BOSH release
       id: build
+      if: steps.check-release.outputs.exists == 'false'
       shell: bash
       run: |
         set -euo pipefail
