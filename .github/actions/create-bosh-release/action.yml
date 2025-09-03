@@ -34,10 +34,14 @@ runs:
         set -euo pipefail
         pushd "${{ inputs.release_dir }}"
           if [[ -f config/blobs.yml ]]; then
-            grep -o 'cflinuxfs5/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml | while read -r blob; do
-              echo "Removing stale RC blob: $blob"
-              bosh remove-blob "$blob" || true
-            done
+            if grep -q 'cflinuxfs5/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml; then
+              grep -o 'cflinuxfs5/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml | while read -r blob; do
+                echo "Removing stale RC blob: $blob"
+                bosh remove-blob "$blob" || true
+              done
+            else
+              echo "No RC blobs to remove"
+            fi
           fi
         popd
 
