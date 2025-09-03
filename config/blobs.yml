@@ -1,5 +1,2 @@
 ---
-rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz:
-  object_id: rootfs/cflinuxfs5-1.0.0-rc.1.tar.gz
-  sha: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  size: 987654321
+
