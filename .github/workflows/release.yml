@@ -346,7 +346,7 @@ jobs:
           tag: v${{ needs.release-rootfs-repo.outputs.final_version }}
           name: v${{ needs.release-rootfs-repo.outputs.final_version }}
           body_file: release-body/body
-          asset_glob: release-artifacts/releases/${{ env.STACK }}/*.tgz
+          asset_glob: release-artifacts/*.tgz
           owner: ivo1116
           repo: cflinuxfs5-release
           target_commitish: ${{ steps.rel_commit.outputs.commit_sha }}
