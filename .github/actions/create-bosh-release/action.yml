@@ -31,12 +31,24 @@ runs:
         sudo mv bosh /usr/local/bin/bosh
         bosh --version
 
+    - name: Clean up old RC blobs
+      shell: bash
+      run: |
+        set -euo pipefail
+        pushd "${{ inputs.release_dir }}"
+          if [[ -f config/blobs.yml ]]; then
+            grep -o 'rootfs/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml | while read -r blob; do
+              echo "Removing stale blob: $blob"
+              bosh remove-blob "$blob" || true
+            done
+          fi
+        popd
+
     - name: Add final rootfs blob
       shell: bash
       run: |
         set -euo pipefail
         pushd "${{ inputs.release_dir }}"
-          # Only add the final tarball (not RCs)
           for f in ../${{ inputs.blob_glob }}; do
             test -f "$f" || { echo "Missing blob $f"; exit 1; }
             base=$(basename "$f")
