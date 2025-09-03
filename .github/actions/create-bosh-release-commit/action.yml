@@ -1,5 +1,5 @@
 name: Commit BOSH Release Repo
-description: Commit and push changes; outputs the commit SHA
+description: Commit and push changes after creating a final BOSH release
 inputs:
   release_dir:
     description: Path to the BOSH release repository
@@ -11,12 +11,13 @@ inputs:
     description: Git user.email for commit
     required: true
   push_token:
-    description: GitHub token to push to remote
+    description: GitHub token with repo write permission
     required: true
 outputs:
   commit_sha:
-    description: Commit SHA of the pushed commit
+    description: Commit SHA of the pushed release commit
     value: ${{ steps.commit.outputs.commit_sha }}
+
 runs:
   using: composite
   steps:
@@ -25,20 +26,27 @@ runs:
       run: |
         set -euo pipefail
         pushd "${{ inputs.release_dir }}"
+
           git config user.name "${{ inputs.git_user_name }}"
           git config user.email "${{ inputs.git_user_email }}"
 
-          git add -A
+          git add config/blobs.yml
+          git add .final_builds/
+          git add releases/
+
           if git diff --staged --quiet; then
-            echo "Nothing to commit"
+            echo "No changes to commit"
           else
-            git commit -m "Finalize release ${STACK}"
+            git commit -m "Finalize BOSH release"
           fi
 
+          # Push changes back to GitHub
           git remote set-url origin \
-            "https://x-access-token:${{ inputs.push_token }}@github.com/${RELEASE_REPO}.git"
+            "https://x-access-token:${{ inputs.push_token }}@github.com/${GITHUB_REPOSITORY}.git"
 
-          git push origin "${DEFAULT_BRANCH:-main}"
+          git push origin HEAD:${GITHUB_REF_NAME}
+
           sha=$(git rev-parse HEAD)
           echo "commit_sha=$sha" >> "$GITHUB_OUTPUT"
+
         popd

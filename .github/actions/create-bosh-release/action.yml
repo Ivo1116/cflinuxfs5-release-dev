@@ -8,7 +8,7 @@ inputs:
     description: Blobstore directory name (e.g. rootfs)
     required: true
   blob_glob:
-    description: Glob for rootfs blob tarballs to add
+    description: Glob for final rootfs tarball (e.g. rootfs-artifacts/cflinuxfs5-*.tar.gz)
     required: true
   release_name:
     description: BOSH release name
@@ -16,6 +16,7 @@ inputs:
   version:
     description: Release version to finalize
     required: true
+
 runs:
   using: composite
   steps:
@@ -30,39 +31,29 @@ runs:
         sudo mv bosh /usr/local/bin/bosh
         bosh --version
 
-    - name: Add blobs
+    - name: Add final rootfs blob
       shell: bash
       run: |
         set -euo pipefail
         pushd "${{ inputs.release_dir }}"
+          # Only add the final tarball (not RCs)
           for f in ../${{ inputs.blob_glob }}; do
             test -f "$f" || { echo "Missing blob $f"; exit 1; }
             base=$(basename "$f")
+            echo "Adding blob: $base"
             bosh add-blob "$f" "${{ inputs.blob_name }}/${base}"
           done
-          git config user.name "cflinuxfs5-bot"
-          git config user.email "cflinuxfs5-bot@test.com"
-          git add config/blobs.yml
-          git commit -m "Add blobs for ${{ inputs.release_name }} ${{ inputs.version }}" || echo "No changes to commit"
         popd
 
-    - shell: bash
+    - name: Create final BOSH release
+      shell: bash
       run: |
         set -euo pipefail
-        ver="7.5.6"
-        url="https://github.com/cloudfoundry/bosh-cli/releases/download/v${ver}/bosh-cli-${ver}-linux-amd64"
-        sudo curl -fsSL "$url" -o /usr/local/bin/bosh
-        sudo chmod +x /usr/local/bin/bosh
-
         pushd "${{ inputs.release_dir }}"
-          for f in ../${{ inputs.blob_glob }}; do
-            test -f "$f" || { echo "Missing blob $f"; exit 1; }
-            base=$(basename "$f")
-            bosh add-blob "$f" "${{ inputs.blob_name }}/${base}"
-          done
           mkdir -p ../release-artifacts
           bosh -n create-release --final \
             --name "${{ inputs.release_name }}" \
             --version "${{ inputs.version }}" \
-            --tarball "../release-artifacts/${{ inputs.release_name }}-${{ inputs.version }}.tgz"
+            --tarball "../release-artifacts/${{ inputs.release_name }}-${{ inputs.version }}.tgz" \
+            --force
         popd
