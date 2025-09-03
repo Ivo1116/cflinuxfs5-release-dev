@@ -4,9 +4,6 @@ inputs:
   release_dir:
     description: Path to the BOSH release repository
     required: true
-  blob_name:
-    description: Blobstore directory name (e.g. rootfs)
-    required: true
   blob_glob:
     description: Glob for final rootfs tarball (e.g. rootfs-artifacts/cflinuxfs5-*.tar.gz)
     required: true
@@ -31,14 +28,14 @@ runs:
         sudo mv bosh /usr/local/bin/bosh
         bosh --version
 
-    - name: Clean up old RC blobs
+    - name: Clean up stale RC blobs
       shell: bash
       run: |
         set -euo pipefail
         pushd "${{ inputs.release_dir }}"
           if [[ -f config/blobs.yml ]]; then
-            grep -o 'rootfs/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml | while read -r blob; do
-              echo "Removing stale blob: $blob"
+            grep -o 'cflinuxfs5/.*-rc\.[0-9]\+\.tar\.gz' config/blobs.yml | while read -r blob; do
+              echo "Removing stale RC blob: $blob"
               bosh remove-blob "$blob" || true
             done
           fi
@@ -50,11 +47,24 @@ runs:
         set -euo pipefail
         pushd "${{ inputs.release_dir }}"
           for f in ../${{ inputs.blob_glob }}; do
-            test -f "$f" || { echo "Missing blob $f"; exit 1; }
+            test -f "$f" || { echo "Missing rootfs tarball $f"; exit 1; }
             base=$(basename "$f")
-            echo "Adding blob: $base"
-            bosh add-blob "$f" "${{ inputs.blob_name }}/${base}"
+            echo "Adding final rootfs blob: $base"
+            # Add under cflinuxfs5/ path (matches package spec)
+            bosh add-blob "$f" "cflinuxfs5/${base}"
           done
+        popd
+
+    - name: Verify golang-1-linux blob exists
+      shell: bash
+      run: |
+        set -euo pipefail
+        pushd "${{ inputs.release_dir }}"
+          if ! grep -q "golang-1-linux/" config/blobs.yml; then
+            echo "ERROR: Missing golang-1-linux blob in blobs.yml"
+            echo "You must run the bump-golang-package job to update it."
+            exit 1
+          fi
         popd
 
     - name: Create final BOSH release
