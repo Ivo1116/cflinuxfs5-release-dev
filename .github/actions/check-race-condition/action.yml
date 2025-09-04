@@ -5,6 +5,9 @@ inputs:
   stack:
     description: 'Stack name'
     required: true
+  oowner:
+      description: 'GH repo owner'
+      required: true
   current_version:
     description: 'Current version being tested'
     required: true
@@ -31,7 +34,7 @@ runs:
         github-token: ${{ env.CFLINUXFS5_TOKEN }}
         script: |
           const { data: releases } = await github.rest.repos.listReleases({
-            owner: 'cloudfoundry',
+            owner: '${{ inputs.owner }}',
             repo: '${{ inputs.stack }}',
             per_page: 1
           });

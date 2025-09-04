@@ -156,6 +156,7 @@ jobs:
         uses: ./.github/actions/check-race-condition
         with:
           stack: cflinuxfs5
+          owner: ivo1116
           current_version: ${{ needs.deploy-cf.outputs.version }}
         env:
           CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
