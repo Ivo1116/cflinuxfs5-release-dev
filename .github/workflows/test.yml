@@ -233,7 +233,7 @@ jobs:
           event-type: rootfs-tests-completed
           client-payload: |
             {
-              "version": "${{ needs.resolve-inputs.outputs.version }}",
+              "version": "${{ needs.resolve-inputs.outputs.version }}"
             }
 
   test-summary:
