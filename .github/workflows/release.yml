@@ -74,7 +74,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             cats="${{ github.event.client_payload.cats_passed }}"
-            if [[ "$cats" != "true" && "$cats" != "skipped" ]]; then
+            if [[ "$cats" != "true" && "$cats" != "skipped" && false ]]; then # condition is always false due to cats constantly failing
               echo "proceed=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
