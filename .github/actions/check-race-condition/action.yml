@@ -5,7 +5,7 @@ inputs:
   stack:
     description: 'Stack name'
     required: true
-  oowner:
+  owner:
       description: 'GH repo owner'
       required: true
   current_version:

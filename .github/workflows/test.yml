@@ -21,6 +21,10 @@ on:
         description: 'Skip Deploy CF'
         type: boolean
         default: true
+      skip_cats: # ✅ NEW
+        description: 'Skip Cloud Foundry Acceptance Tests'
+        type: boolean
+        default: false
 
 jobs:
   resolve-inputs:
@@ -31,6 +35,7 @@ jobs:
       skip_cleanup: ${{ steps.set-vars.outputs.skip_cleanup }}
       skip_setup: ${{ steps.set-vars.outputs.skip_setup }}
       skip_deploy: ${{ steps.set-vars.outputs.skip_deploy }}
+      skip_cats: ${{ steps.set-vars.outputs.skip_cats }}
     steps:
       - name: Normalize inputs
         id: set-vars
@@ -39,6 +44,7 @@ jobs:
           echo "skip_cleanup=${{ github.event.client_payload.skip_cleanup || github.event.inputs.skip_cleanup || 'true' }}" >> $GITHUB_OUTPUT
           echo "skip_setup=${{ github.event.client_payload.skip_setup || github.event.inputs.skip_setup || 'true' }}" >> $GITHUB_OUTPUT
           echo "skip_deploy=${{ github.event.client_payload.skip_deploy || github.event.inputs.skip_deploy || 'true' }}" >> $GITHUB_OUTPUT
+          echo "skip_cats=${{ github.event.client_payload.skip_cats || github.event.inputs.skip_cats || 'false' }}" >> $GITHUB_OUTPUT
 
   setup-test-environment:
     name: Setup Test Environment
@@ -110,9 +116,10 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     if: |
-      always() && (
-        (needs.resolve-inputs.outputs.skip_deploy == 'true') || 
-        (needs.deploy-cf.result == 'success')
+      always() && 
+      needs.resolve-inputs.outputs.skip_cats != 'true' && (
+        needs.resolve-inputs.outputs.skip_deploy == 'true' || 
+        needs.deploy-cf.result == 'success'
       )
     outputs:
       cats_passed: ${{ steps.cats.outputs.success }}
@@ -157,7 +164,7 @@ jobs:
         with:
           stack: cflinuxfs5
           owner: ivo1116
-          current_version: ${{ needs.resolve-inputs.version }}
+          current_version: ${{ needs.resolve-inputs.outputs.version }}
         env:
           CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
 
@@ -211,8 +218,11 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       always() && 
-      needs.check-race-condition.outputs.race_check_passed == 'true'
-# some other condition in the future
+      needs.check-race-condition.outputs.race_check_passed == 'true' &&
+      (
+        needs.resolve-inputs.outputs.skip_cats == 'true' ||
+        needs.run-cats.outputs.cats_passed == 'true'
+      )
     steps:
       - name: Trigger Release Workflow
         uses: peter-evans/repository-dispatch@v3
@@ -221,7 +231,8 @@ jobs:
           event-type: rootfs-tests-completed
           client-payload: |
             {
-              "version": "${{ needs.deploy-cf.outputs.version }}"
+              "version": "${{ needs.deploy-cf.outputs.version }}",
+              "cats_passed": "${{ needs.resolve-inputs.outputs.skip_cats == 'true' && 'skipped' || needs.run-cats.outputs.cats_passed }}"
             }
 
   test-summary:
@@ -249,7 +260,9 @@ jobs:
             echo "**CF Deployment**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ needs.run-cats.outputs.cats_passed }}" == "true" ]]; then
+          if [[ "${{ needs.resolve-inputs.outputs.skip_cats }}" == "true" ]]; then
+            echo "**CATs**: Skipped" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.run-cats.outputs.cats_passed }}" == "true" ]]; then
             echo "**CATs**: Passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "**CATs**: Failed" >> $GITHUB_STEP_SUMMARY
@@ -266,7 +279,7 @@ jobs:
           
           # Determine overall result
           if [[ "${{ needs.deploy-cf.outputs.deployment_ready }}" == "true" && \
-                "${{ needs.run-cats.outputs.cats_passed }}" == "true" && \
+                ( "${{ needs.resolve-inputs.outputs.skip_cats }}" == "true" || "${{ needs.run-cats.outputs.cats_passed }}" == "true" ) && \
                 "${{ needs.check-race-condition.outputs.race_check_passed }}" == "true" ]]; then
             echo "**Overall Result**: All tests passed - ready for release" >> $GITHUB_STEP_SUMMARY
           else
