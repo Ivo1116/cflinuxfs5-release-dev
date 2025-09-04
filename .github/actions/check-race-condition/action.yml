@@ -45,7 +45,7 @@ runs:
       id: check
       shell: bash
       run: |
-        set -euo pipefail
+        set -eo pipefail   
         
         cd buildpacks-ci
         
@@ -55,7 +55,6 @@ runs:
         echo "Current version being tested: $CURRENT_VERSION"
         echo "Latest released version: $LATEST_VERSION"
         
-        # Remove 'v' prefix if present
         CURRENT_CLEAN="${CURRENT_VERSION#v}"
         LATEST_CLEAN="${LATEST_VERSION#v}"
         
@@ -80,8 +79,8 @@ runs:
           return 0
         }
         
-        version_compare "$CURRENT_CLEAN" "$LATEST_CLEAN"
-        rc=$?
+        rc=0
+        version_compare "$CURRENT_CLEAN" "$LATEST_CLEAN" || rc=$?
         
         case $rc in
           0|1)
