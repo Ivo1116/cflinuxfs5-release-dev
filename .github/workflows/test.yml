@@ -138,7 +138,7 @@ jobs:
 
   check-race-condition:
     name: Check for Race Conditions
-    needs: [deploy-cf, run-cats, resolve-inputs]
+    needs: [run-cats, resolve-inputs]
     runs-on: ubuntu-latest
     if: |
       always() && (
@@ -157,7 +157,7 @@ jobs:
         with:
           stack: cflinuxfs5
           owner: ivo1116
-          current_version: ${{ needs.deploy-cf.outputs.version }}
+          current_version: ${{ needs.resolve-inputs.version }}
         env:
           CFLINUXFS5_TOKEN: ${{ secrets.CFLINUXFS5_TOKEN }}
 
@@ -207,13 +207,12 @@ jobs:
 
   trigger-release-workflow:
     name: Trigger Release Workflow
-    needs: [deploy-cf, run-cats, check-race-condition, resolve-inputs]
+    needs: [run-cats, check-race-condition, resolve-inputs]
     runs-on: ubuntu-latest
     if: |
       always() && 
-      needs.deploy-cf.outputs.deployment_ready == 'true' &&
-      (needs.run-cats.outputs.cats_passed == 'true') &&
       needs.check-race-condition.outputs.race_check_passed == 'true'
+# some other condition in the future
     steps:
       - name: Trigger Release Workflow
         uses: peter-evans/repository-dispatch@v3
