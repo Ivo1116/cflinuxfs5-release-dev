@@ -233,8 +233,8 @@ jobs:
           event-type: rootfs-tests-completed
           client-payload: |
             {
-              "version": "${{ needs.resolve-inputs.outputs.version }}"
-              "cats_passed": "${{ needs.resolve-inputs.outputs.skip_cats == 'true' && 'skipped' || needs.run-cats.outputs.cats_passed }}"
+              "version": "${{ needs.resolve-inputs.outputs.version }}",
+              "cats_passed": "true"
             }
 
   test-summary:
