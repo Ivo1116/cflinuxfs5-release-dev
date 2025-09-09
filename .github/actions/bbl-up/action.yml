@@ -1,5 +1,5 @@
 name: 'BBL Up'
-description: 'Set up test environment using BBL (GCP)'
+description: 'Set up test environment using BBL'
 
 inputs:
   stack:
