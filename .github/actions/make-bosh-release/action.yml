@@ -9,7 +9,7 @@ inputs:
     description: Version number for the rootfs (e.g., 1.0.0-rc.1)
     required: true
   release-repo:
-    description: GitHub org/repo for the BOSH release (e.g., cloudfoundry/cflinuxfs5-release)
+    description: GitHub org/repo for the BOSH release ()
     required: true
   bosh-cli-version:
     description: Version of bosh-cli to install

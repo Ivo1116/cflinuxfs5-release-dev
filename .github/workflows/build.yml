@@ -57,7 +57,7 @@ jobs:
                 bucket_name: cflinuxfs5test
                 access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
                 secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          cflinuxfs_release_repo: ivo1116/cflinuxfs5-release
+          cflinuxfs_release_repo: ivo1116/cflinuxfs5-release-dev
           cflinuxfs_release_ref: main
           golang_release_repo: cloudfoundry/bosh-package-golang-release
           golang_release_ref: main
@@ -211,7 +211,7 @@ jobs:
         with:
           stack: cflinuxfs5
           version: ${{ needs.gather-resources.outputs.version }}
-          release-repo: ivo1116/cflinuxfs5-release
+          release-repo: ivo1116/cflinuxfs5-release-dev
           go-version: 1.24.6
 
       - name: Upload stack to S3

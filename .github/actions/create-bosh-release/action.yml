@@ -15,7 +15,7 @@ inputs:
     description: BOSH release name (e.g., cflinuxfs5)
     required: true
   release_repo:
-    description: GitHub org/repo for the BOSH release (e.g., ivo1116/cflinuxfs5-release)
+    description: GitHub org/repo for the BOSH release (e.g., ivo1116/cflinuxfs5-release-dev)
     required: true
   bosh-cli-version:
     description: Version of bosh-cli to install

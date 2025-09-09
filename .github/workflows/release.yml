@@ -25,7 +25,7 @@ on:
 env:
   STACK: cflinuxfs5
   ROOTFS_REPO: ivo1116/cflinuxfs5
-  RELEASE_REPO: ivo1116/cflinuxfs5-release
+  RELEASE_REPO: ivo1116/cflinuxfs5-release-dev
   DOCKER_IMAGE: ivo1116/cflinuxfs5
   BUCKET_NAME: cflinuxfs5test
   DEFAULT_BRANCH: main
@@ -350,7 +350,7 @@ jobs:
           body_file: release-body/body
           asset_glob: release-artifacts/*.tgz
           owner: ivo1116
-          repo: cflinuxfs5-release
+          repo: cflinuxfs5-release-dev
           target_commitish: ${{ steps.rel_commit.outputs.commit_sha }}
 
   summary:
