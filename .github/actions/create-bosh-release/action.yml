@@ -52,6 +52,20 @@ runs:
         ref: main
         path: ${{ inputs.release_dir }}
 
+    - name: Setup BOSH private.yml
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "${{ inputs.release_dir }}/config"
+        cat > "${{ inputs.release_dir }}/config/private.yml" <<EOF
+        blobstore:
+          provider: s3
+          options:
+            bucket_name: cflinuxfs5test
+            region: us-east-1
+            credentials_source: env_or_profile
+        EOF
+
     - name: Checkout bosh-package-golang-release
       uses: actions/checkout@v4
       with:
