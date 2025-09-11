@@ -323,7 +323,7 @@ jobs:
           stack: cflinuxfs5
           version: ${{ needs.release-rootfs-repo.outputs.final_version }}
           release_name: cflinuxfs5
-          release_repo: ivo1116/cflinuxfs5-release
+          release_repo: ivo1116/cflinuxfs5-release-dev
           go-version: 1.24.6
 
       - name: Create BOSH release notes
