@@ -10,3 +10,6 @@ rootfs/cflinuxfs5-1.0.2.tar.gz:
 rootfs/cflinuxfs5-1.0.4.tar.gz:
   size: 538073486
   sha: sha256:73daca06ca9e4b8a1a8c490e97a6d2827dc8ea7d945c9bd9858b154f01200616
+rootfs/cflinuxfs5-1.0.5.tar.gz:
+  size: 538064499
+  sha: sha256:5cc85c7a85abfee3800ae4f9947a27f93c5ceae8e16cb278cc0d366fb469b9a1
